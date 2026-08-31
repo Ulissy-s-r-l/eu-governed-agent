@@ -51,3 +51,9 @@ requirements rather than arguing scope.
 - Which subcontractors (LLM inference, hosting) must be named, and what exit strategy do we
   commit to contractually?
 - Do the DE/NL regimes add anything beyond DORA that Italy-first work should pre-empt?
+- **Is Ulissy S.R.L.'s current corporate form / capitalization adequate to carry Art. 30(3)
+  liability at target contract sizes?** *(Relocated from ADR-0004 — a DORA-liability question, not a
+  contracting-entity one.)* A bank's third-party-risk function will assess this **directly**, so it
+  must be answered **before** the DORA pack (P4) is credible — not discovered inside a client's due
+  diligence. Not answerable in-house; needs an Italian commercialista and likely counsel (see
+  `docs/roadmap.md` P4).

@@ -146,6 +146,14 @@ protocol · security and resilience evidence.
 Assume **Art. 30(3)** applies: a live AML triage system supports a regulatory
 function.
 
+**External input required — not answerable in-house.** Three commercial/legal questions gate this
+window: cross-border registration / VAT / supervisory-notification from an Italian S.R.L., and the
+local-subsidiary threshold (ADR-0004 (a)/(b)); and whether Ulissy S.R.L.'s corporate form /
+capitalization carries Art. 30(3) liability at target contract sizes (ADR-0003). These need an
+**Italian commercialista** and likely **counsel** — they cannot be answered by the team. They are
+**P4-window** questions, **not P0 blockers**; the corporate-form one gates the pack's *credibility*,
+since a bank's third-party-risk review assesses it directly.
+
 ---
 
 ## P5 — Iccrea
