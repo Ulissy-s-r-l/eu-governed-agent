@@ -12,7 +12,7 @@ the fact — see each ADR's decision date and the [capture note](#capture) below
 | [0004](ADR-0004-ulissy-srl-eu-contracting-entity.md) | Ulissy S.R.L. is the contracting entity for all EU markets | Accepted | 2026-08-29 |
 | [0005](ADR-0005-standard-gns-foundation-products-ulissy.md) | Standard belongs to GNS-Foundation, products to Ulissy S.R.L. | Accepted | 2026-08-29 |
 | [0006](ADR-0006-defer-eic-digital-europe-assessment.md) | EIC/Digital Europe assessment deferred pending a first reference | Accepted (defer) | 2026-08-29 |
-| [0007](ADR-0007-cgr-governance-domain.md) | CGR governance domain + backfill expression (schema gaps) | **Proposed** | — (record 2026-08-31) |
+| [0007](ADR-0007-cgr-governance-domain.md) | CGR governance domain + backfill (relocated to Foundation) | **Relocated** → `GNS-Foundation/grafomem` docs/decisions/0002 | — |
 
 ## Format
 
