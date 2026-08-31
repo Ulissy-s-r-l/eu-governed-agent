@@ -111,7 +111,7 @@ condition on ADR-0005) as its open sub-questions.
 ## 7. Research workstreams
 
 > **Superseded-in-part (2026-08-31): R1–R4 are complete** (delivered 2026-08-29). Retained below
-> for reference; the forward-looking, sequenced plan lives in `docs/roadmap.md` (once it exists).
+> for reference; the forward-looking, sequenced plan lives in [`docs/roadmap.md`](roadmap.md).
 
 **R1 — Incumbent landscape.** Who sits in AML alert triage at EU institutions today. What they are shipping on agentic AI. Where the unclaimed gap is.
 
@@ -127,7 +127,7 @@ condition on ADR-0005) as its open sub-questions.
 
 > **Superseded-in-part (2026-08-31):** B0–B4 below are workstreams, not yet a sequenced roadmap,
 > and are **about to be re-sequenced**. Treat them as the pre-roadmap inventory; the forward-looking
-> plan is **`docs/roadmap.md`** (once it exists).
+> plan is **[`docs/roadmap.md`](roadmap.md)**.
 
 ### Development criteria
 
