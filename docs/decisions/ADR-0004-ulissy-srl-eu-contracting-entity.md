@@ -41,5 +41,9 @@ agreements, DORA contractual provisions, and invoicing run through Ulissy S.R.L.
 - Does selling into DE/NL from an Italian S.R.L. trigger any local registration, VAT, or
   supervisory-notification requirements we must pre-clear?
 - At what revenue/headcount does a local subsidiary in DE or NL become warranted?
-- Is Ulissy S.R.L.'s current corporate form/capitalization adequate to carry DORA Art. 30(3)
-  liability at target contract sizes?
+
+*(The DORA Art. 30(3) liability question — whether Ulissy S.R.L.'s corporate form / capitalization
+is adequate at target contract sizes — moved to
+[ADR-0003](ADR-0003-accept-dora-ict-provider-art-30-3.md): it is a DORA-liability question, not a
+contracting-entity one. This ADR settled **which** entity contracts; that one is about what
+carrying the liability requires.)*
