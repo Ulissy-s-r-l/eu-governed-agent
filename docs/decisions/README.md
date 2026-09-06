@@ -26,6 +26,20 @@ sub-questions. Statuses: **Proposed** → **Accepted** → (later) **Superseded 
 **Deprecated**. To change a recorded decision, add a new ADR that supersedes it rather than
 editing the old one in place.
 
+## Verifying load-bearing claims
+
+This repo inherits the Foundation's **primary-source verification** convention (see
+`GNS-Foundation/grafomem` → `docs/decisions/README.md`, "Primary-source verification"). A
+**load-bearing external claim** — a regulatory citation (article number **and** heading), a legal
+effect, a deployment/topology fact, a claim about another system — must be **verified against a
+primary source** (EUR-Lex for EU law, the official spec text, code/deploy metadata) **before it
+enters an ADR, the roadmap, or the pitch**; not a summary, a research report, or another of our own
+records. Cite what was verified, at the granularity verified (heading + operative sentence; one
+citation does not carry two claims). This bar is load-bearing *in the pitch*, not only in the record —
+it was added after the **AMLR Art. 18** citation propagated from a research report into the roadmap and
+into `grafomem` decision 0009 unchecked (Art. 18 is "Outsourcing"; the named-MLRO-is-accountable claim
+is Art. 11 + Recital 38, with AI Act Art. 14 for oversight).
+
 ## Capture
 
 These decisions are **intended** to be attested to GRAFOMEM Cloud via `grafomem-cgr` as
