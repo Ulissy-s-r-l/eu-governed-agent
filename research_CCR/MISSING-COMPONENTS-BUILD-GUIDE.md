@@ -10,11 +10,35 @@ it*. Every item below names the spec section it implements, the files it touches
 concrete code sketch, an acceptance test, and an effort estimate.
 
 Current state of the code: **Phases 1–4 plus the Tier-1 state sweep are complete and
-tested** (24 tests, 3 demos, all passing). The experience engine (capture, evaluation,
+tested** (18 tests, 3 demos, all passing). The experience engine (capture, evaluation,
 ledger, Merkle checkpoints, GMP fact bridge, grafomem sealing) works. The transaction
-layer (admission gate, propose, validate with replay, commit, forward-only revert)
-works for four update targets. The B-vs-C experiment passes with the negative control.
+layer (admission gate, propose, validate with held-out replay, commit, forward-only
+revert) works for four update targets. The B-vs-C experiment runs, but its C > B rung is
+**partially falsified** against an honest B arm (see §0 framing and doc 06 §2.1); D1/D2/D3
+hold.
 What follows is everything else, in build order.
+
+---
+
+## 0. Framing — what CCR is for, and what it is not
+
+This guide is an engineering plan and can read as though CCR's value is the *learning*. Two decisions
+taken this week narrow that, and the guide carries them so no downstream reader re-derives the wrong
+claim.
+
+**1. Learning is domain-conditional.** `eu-governed-agent` ADR-0009 records that AML alert triage emits
+no correctness signal: ~2% of alerts become SARs, ~4% of SARs receive any feedback, that feedback is
+outcome-blind by statute, and the no-file branch — the large majority — receives essentially nothing. B3
+is therefore a **Level 2 governed assistant and makes no learning claim.** CCR's learning half is
+testable only in domains that *answer back*: the tool-selection simulator, software engineering
+(`cc-builder@ulissy` already generates this shape), receivables.
+
+**2. The transferable contribution is the gate, not the learner.** What carries into a regulated
+deployment is the transaction discipline: admission that refuses, validation that rejects before commit,
+forward-only revert with the harmful transaction still visible, and a provenance path from a committed
+policy entry back to its justifying evidence. That is what a supervisor asks for. **Every item below
+that hardens the gate has value independent of whether the agent ever learns anything** — read the build
+order in that light.
 
 ---
 
@@ -197,6 +221,45 @@ so decay + re-confirmation together implement "beliefs fade unless re-earned" en
 end. **Acceptance:** commit a preference at confidence 0.56, advance 100 versions,
 run maintenance → preference deprecated, tx in ledger, revert restores it. ~1 day.
 
+### 2.5 Co-signed approval on the learning transaction
+
+**Spec:** `cgr.cosign.v1` (grafomem `docs/cgr/cgr-cosign-v1-spec.md`), doc 04 §1, doc 07 §7 property 1.
+**Status:** doc 04's `validation.human_approval` is `{approver, decision, rationale, timestamp}` with
+**no signature**; `tx.signature` is one signature, the system's. So `HighRiskUpdate ⇒ RequiredApproval`
+currently reduces to an unsigned field an operator can write — the property is *asserted*, not enforced.
+This is the same gap found independently in TrueForge's approval event and in `cgr.attestation.v4`,
+resolved upstream 2026-09-06 (grafomem decision 0009 **accepted**; `cgr.cosign.v1` specifies the
+general two-party co-signature envelope). **Depends on:** nothing in this guide. **Unblocks:** an
+enforceable `HighRiskUpdate ⇒ RequiredApproval`.
+
+Wire the envelope into `LearningEngine`:
+
+- `validation.human_approval` becomes an **approval assertion** carrying `{content_digest, approver_id,
+  approver_key_id, approver_act, decision_date, record_nonce}`, where `content_digest` is
+  `BLAKE2b-256(JCS(candidate update))`.
+- The approver signs `grafomem.hitl.approval.v1: ‖ JCS(assertion)` with a **self-custodied** key.
+  `gns_browser`'s `signBytesToHex()` already enforces that domain tag and refuses to sign without it —
+  reuse the signer; the caller constructs the structured assertion.
+- The transaction record's system signature covers the whole artifact **including** the approver
+  signature (**nested, not parallel** — parallel would let the approval block be lifted out with the
+  transaction still verifying).
+- A transaction whose `risk_class` requires approval and lacks a valid approver signature **MUST** be
+  rejected at validation, not committed.
+
+**Honest limits** (matching the cosign spec's register): stripping the approval produces an *invalid*
+transaction; an approval-less high-risk transaction is *non-conformant* (a verifier rule); a compromised
+system key can always mint a fresh approval-less transaction — *detectable* against externally-held
+commitments but not preventable. **Tamper-evident and conformance-enforced, not tamper-proof.**
+
+**Not resolved by this item:** whether the approver key belongs to a *verified named person* (0009 gap
+3a). The envelope makes the approval attributable to a key; binding that key to an accountable
+individual is the separate assurance track.
+
+**Acceptance:** `tests/test_approval.py` — a high-risk candidate without an approver signature is
+rejected with the reason recorded in the ledger; the same candidate with a valid signature commits;
+stripping the signature from a committed transaction breaks verification; a signature over a *different*
+`content_digest` is rejected. ~1.5 days (relative sizing).
+
 ---
 
 ## 3. The two hard components
@@ -354,8 +417,51 @@ whose replay regresses is rejected.
 **Spec:** doc 08 (entire), doc 07 §§4–5. **Estimate: 5–8 days**, dominated by the
 delegation chain verifier.
 
-This is where `agent_ref="did:gns:local-dev"` becomes real. Four bindings, in the doc-08
-order:
+This is where `agent_ref="did:gns:local-dev"` would become real — but the scoping in earlier drafts
+assumed a GNS that provides DID documents, VC-style mandates, and a stable controller. **It does not.**
+Verified this week and recorded in grafomem decision records 0003, 0005, 0008, 0009:
+
+- there are no `did:gns:` identity records carrying `state_commitment`;
+- there are no VC mandate credentials;
+- principals are **ephemeral** — `setup-agent.ts` mints one in memory, signs the cert, discards the
+  secret (0003) — so doc 08 §2's `controller` separating ownership from operation has nothing to
+  attach to;
+- GNS derives `human` by **absence** (not in the agent table ⇒ human), not by a positive verified
+  assertion (0009 gap 3);
+- no lineage or succession record exists in any of the three systems (0008).
+
+Phase 7 is therefore **binding plus building the layer being bound to.** Split it:
+
+### 7A — port what already exists (in geiant, not GNS)
+
+Some of Phase 7 is deployed today, in geiant's `mcp-audit`, and should be **reused, not rebuilt**.
+*(Table verified against the code, not a summary — `packages/mcp-audit/src/chain.ts` and
+`.../supabase/migrations/20260320_agent_audit.sql`.)*
+
+| Doc 08 concept | Where it already exists (verified) |
+|---|---|
+| Scope attenuation (§3, `scope(Mᵢ₊₁) ⊆ scope(Mᵢ)`) | `delegation_certificates`: `h3_cells TEXT[]`, `facets TEXT[]`, `max_depth INTEGER` (default 0, CHECK 0–5), `constraints JSONB` (`20260320_agent_audit.sql:20-36`) |
+| Authority guard at execution (doc 01 §10.2) | `chain.ts`: **`checkJurisdiction`** (H3, `:122`), **`checkFacet`** (`:135`), **`checkToolAllowed`** (`:182`), `checkRevocation` (`:157`), `isDelegationCertActive` (`:113`) — and `checkFacet`/`checkToolAllowed` are called **live** in `middleware.ts:267,273` |
+| Property 9, learning–authority separation | The **A2** rule, enforced live (`middleware.ts:134`, grafomem 0006): an agent absent from `agent_registry` is denied; registration is by explicit provisioning only, so an agent cannot widen its own scope |
+| Checkpoint exfiltration (doc 03 §5.3) | `grafomem_seal.py` signed `.gfm`; geiant epoch anchoring (`gcrumbs`/`agent_epochs`) |
+
+*(Correction from the earlier draft: the guard functions are `checkJurisdiction` / `checkFacet` /
+`checkToolAllowed`, **not** `checkTool` / `checkH3` — verified in `chain.ts`.)*
+
+Porting means calling geiant's verifier from CCR's authority guard rather than writing a second one; the
+scope algebra and the cert format already exist and are in production.
+
+### 7B — genuinely new, and blocked upstream
+
+DID records carrying `state_commitment`, VC mandates, drift-constrained mandates, and a stable
+`controller`. These depend on decisions **still open**: 0005 (custody-managed principals, proposed),
+0008 (where lineage lives), and **0009 gap 3a** (a verified named-person identity, gated on the
+assurance track). **Do not schedule 7B against the current spec text** — doc 08 describes the target
+system in the present tense; a status line distinguishing *deployed* from *specified* belongs in doc 08
+itself.
+
+The four bindings below are **7B** (new), except binding 3 (authority guard), whose enforcement machinery
+is the 7A port above. In the doc-08 order:
 
 1. **Identity–state binding (doc 08 §4):** every state commit emits a signed *commit
    event* onto the GNS identity chain carrying `Commit_n`; `agent_ref` resolves to a
@@ -436,35 +542,42 @@ attack traces for all eleven.
 
 ## 7. Build order, effort, critical path
 
-| Order | Item | Section | Estimate | Depends on | Unblocks |
-|---|---|---|---|---|---|
-| 1 | Confidence-floor enforcement | 2.4 | 1 d | — | honest L3 |
-| 2 | Consolidation (2.1a) + re-confirmation (2.1d) | 2.1 | 2 d | — | real semantic memory |
-| 3 | Contradiction detection | 2.1(b) | 1 d | 2 | safe memory |
-| 4 | Evaluation history + calibration | 2.2 | 2 d | — | L4 seed |
-| 5 | Strategy library | 2.3 | 1.5 d | 2 | generalization |
-| 6 | GMP-backed memory persistence | 2.1(c) | 1.5 d | 2 | grafomem-native memory |
-| 7 | Skills: plans, shadow, promotion | 3.1 | 3 d | — | L2 |
-| 8 | Skills: code sandbox | 3.1 | 3 d | 7 | full L2 |
-| 9 | Causal graph: store + attribution | 3.2 | 4 d | — | doc 05, RQ5 |
-| 10 | Causal graph: counterfactuals + consumers | 3.2 | 4 d | 9 | smarter gate/replay |
-| 11 | State DAG: parents format + store | 4 | 2 d | — | branching |
-| 12 | State DAG: merge + validation | 4 | 3 d | 11 | safe branches |
-| 13 | Hypothesis property tests (stage 1) | 6 | 3 d | — | regression harness |
-| 14 | GNS: commit events + DID binding | 5 | 2 d | 11 | identity layer |
-| 15 | GNS: delegation + authority guard | 5 | 4 d | 14 | doc 08 |
-| 16 | ProVerif model (stage 2) | 6 | 7 d | 13, 14, 15 | Phase 8 |
+> **This is a dependency graph, not a schedule.** CCR is one of several parallel tracks (B3, the
+> identity-assurance track, the `cgr.cosign.v1` corpus and implementations, buyer discovery). It has no
+> dedicated builder. The ordering below is a **dependency graph**, not a schedule; the relative sizing in
+> the section bodies is for comparing items against each other, **not for forecasting a date**. (A prior
+> "≈ 44–54 working days" total has been removed for this reason.)
 
-**Total: ≈ 44–54 working days** for the full roadmap; **Tier 2 alone (items 1–6) is
-≈ 8 days** and doubles the system's functional surface without any new architecture.
+| Order | Item | Section | Depends on |
+|---|---|---|---|
+| 1 | Confidence-floor enforcement | 2.4 | — |
+| 2 | Consolidation + re-confirmation | 2.1a/d | — |
+| 3 | **Co-signed approval on the transaction** | **2.5 (new)** | — |
+| 4 | Contradiction detection | 2.1b | 2 |
+| 5 | Evaluation history + calibration | 2.2 | — |
+| 6 | Per-channel reliability (closes the standing rule) | 2.2 | 5 |
+| 7 | Strategy library | 2.3 | 2 |
+| 8 | GMP-backed memory persistence | 2.1c | 2 |
+| 9 | Skills: plans, shadow, promotion | 3.1 | — |
+| 10 | Skills: code sandbox | 3.1 | 9 |
+| 11 | Causal graph: store + attribution | 3.2 | — |
+| 12 | Causal graph: counterfactuals | 3.2 | 11 |
+| 13 | State DAG: parents format + store | 4 | — |
+| 14 | State DAG: merge + validation | 4 | 13 |
+| 15 | Hypothesis property tests (stage 1) | 6 | — |
+| 16 | **Phase 7A — port existing authority machinery** | **§5 / C** | 13 |
+| 17 | Phase 7B — GNS identity layer | 5 | 16, 0005, 0008, 0009 gap 3a |
+| 18 | ProVerif model (stage 2) | 6 | 15, 16 |
 
-Critical path reasoning: items 1–6 are independent of everything and should all land
-before the hard components, because the hard components *use* them — skill validation
-consumes the calibration loop's reliability scores, and causal-edge admission consumes
-the confidence machinery. The DAG format change (11) should land *before* GNS (14–15)
-because identity-chain anchoring signs parents, and signing a format about to change
-wastes the anchor. Property tests (13) start the day after Tier 2 and grow with every
-later merge.
+Items 3 and 6 are placed early deliberately: both close the "trust the channel, not the account"
+standing rule below, and both have value whether or not anything later is built.
+
+Critical path reasoning *(kept verbatim; parenthetical item numbers retargeted to the table above)*:
+items 1–6 are independent of everything and should all land before the hard components, because the hard
+components *use* them — skill validation consumes the calibration loop's reliability scores, and
+causal-edge admission consumes the confidence machinery. The DAG format change (13) should land *before*
+GNS (16–17) because identity-chain anchoring signs parents, and signing a format about to change wastes
+the anchor. Property tests (15) start the day after Tier 2 and grow with every later merge.
 
 ### Standing rules (apply to every item above)
 
@@ -481,9 +594,24 @@ later merge.
   anchor to outlive the machine.
 - **The evaluator is load-bearing.** The B-vs-C negative control (garbage evaluation →
   collapse to chance) is the permanent guard test for every learning-path change.
+- **Trust the channel, not the account.** No component may accept a self-reported confidence
+  as evidence of reliability. The admission gate currently reads `evaluation.confidence` with
+  no channel verification — a forged block claiming `confidence=0.99` yields V ≈ 0.695 and
+  walks through a 0.55 threshold. Per-channel reliability tracking (doc 07 §2.2) is
+  unimplemented, and until it is, D1 defends *experience* poisoning and not *feedback*
+  poisoning. This is the project's actual thesis, and it arrived three times independently this
+  week — CCR's gate trusting self-reported confidence; AML vendors training on analyst
+  disposition labels because no ground truth exists (so their models learn to *agree with* the
+  analyst rather than to be correct); and four separate systems recording human approval as
+  unsigned metadata. All three are one failure: **the system trusts an account of what happened
+  rather than a channel that can contradict it.**
 
 ---
 
 *Build guide for the `ccr-agent` implementation. Companion to the CCR specification
 series (`00-CCR-SYSTEM-OVERVIEW.md` … `08-GNS-CCR-INTEGRATION.md`) and the project
-`README.md`. Status as of the Tier-1 sweep: 24/24 tests, D1/D2/D3, B-vs-C all passing.*
+`README.md`. Status: 18/18 tests, D1/D2/D3 passing. **B-vs-C: the C > B rung is partially
+falsified** — against an honest B arm, C−B = +0.011 mean across three seeds and C loses on
+seed 7 (doc 06 §2.1). Structured evaluation and raw retrieval are indistinguishable over a
+truthful outcome channel; the differentiator is **evaluation-channel integrity under
+adversarial input** (which D1 tests, and B-vs-C does not).*
