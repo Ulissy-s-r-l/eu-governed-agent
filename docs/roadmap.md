@@ -158,11 +158,26 @@ since a bank's third-party-risk review assesses it directly.
 
 ## P5 — Iccrea
 
-Discovery, not a sale. The question is whether the liability argument —
-AMLR Art. 18 makes responsibility non-transferable, so who is at fault when an
-agent acts — lands with an MLRO.
+Discovery, not a sale. The question is whether the liability argument lands
+with an MLRO: an agent that prepares dispositions is functionally an
+outsourced/automated task, and **AMLR Art. 18 (Outsourcing)** keeps the obliged
+entity *"fully liable … connected to the outsourced tasks"* — so accountability
+**cannot pass to the agent** — while **AMLR Art. 11 (Compliance functions) +
+Recital 38** place that accountability on the designated compliance officer (the
+MLRO). So: who is at fault when an agent acts? The entity, through its MLRO.
 
 **Horizon: autumn 2026.**
+
+> **Citation note (2026-09-06).** An earlier draft cited "AMLR Art. 18 makes
+> responsibility non-transferable" loosely. Verified against source: Art. 18 is
+> **"Outsourcing"** (obliged entity *"shall remain fully liable"* for outsourced
+> tasks) — the right cite for *accountability-cannot-transfer-to-the-agent*, but
+> it carries **no** natural-person-signature or MLRO-designation provision. The
+> *named-MLRO-is-accountable* half is **Art. 11 + Recital 38** (and, for
+> agent oversight, **AI Act Art. 14**). This mis-citation propagated from a
+> research report into this roadmap and into GNS-Foundation/grafomem decision
+> 0009 unchecked; corrected in both. See grafomem `docs/decisions/0009`
+> "Correction — AMLR Art. 18 citation."
 
 **Honest note on sequencing.** P0–P4 ahead of P5 is your call and it is
 defensible: you would rather walk in having built the thing than having pitched
