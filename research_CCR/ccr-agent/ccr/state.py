@@ -74,7 +74,10 @@ class MemoryItem:
     content: str
     confidence: float
     sources: list[str]                      # root exp_ids (I4/I6)
-    status: str = "active"                  # active | deprecated
+    # doc 02 §3.1: active | deprecated | contested. `contested` = a detected
+    # contradiction, present-but-NOT-behavioural (read like below-floor), neither
+    # fact superseding the other; MUST NOT be auto-resolved by confidence.
+    status: str = "active"
     created_tx: str = ""
     last_confirmed_tx: str = ""
 
@@ -89,8 +92,13 @@ class CognitiveState:
     confidence_policy: dict = field(         # doc 02 §3.6; versioned state
         default_factory=lambda: dict(DEFAULT_CONFIDENCE_POLICY))
     semantic_memory: dict = field(default_factory=dict)   # id -> MemoryItem (doc 02 §3.1)
-    evaluation_history: dict = field(         # doc 02 §3.8: channel_id -> {reliability, verdicts}
-        default_factory=dict)
+    # doc 02 §3.8 / doc 04 §5B committed shape, written ONLY by a recalibrate tx:
+    #   {"reference": <channel>,                         # designated once, then immutable
+    #    "channels": {c: {"reliability": r, "window": {...}}},
+    #    "recalibrated_tx": tx_id, "recalibrated_version": v}
+    # The gate's trust term reads reliability from HERE (committed) — never from a
+    # live CalibrationLoop. Empty {} = never recalibrated ⇒ gate uses self-report.
+    evaluation_history: dict = field(default_factory=dict)
 
     def body(self) -> dict:
         d = asdict(self)
