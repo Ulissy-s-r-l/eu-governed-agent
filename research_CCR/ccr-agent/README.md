@@ -139,13 +139,20 @@ Every C-arm ledger verifies its hash chain end-to-end.
 
 ## Stated limitations (architectural, not bugs)
 
-- **Cold-start: replay cannot protect a region it has never seen.** Do-no-harm
-  compares a candidate against the *incumbent's* held-out rate. In a region with
+- **Cold-start: replay cannot protect a region it has never seen** *(compensating control added by
+  item 1)*. Do-no-harm compares a candidate against the *incumbent's* held-out rate. In a region with
   no incumbent history, `inc_rate` is `None` and the comparison is vacuous, so a
   harmful candidate commits on admission alone (this is exactly what D3 shows).
   Held-out replay may even observe the candidate's true (poor) rate and still be
   unable to act, because there is nothing to compare it to. A region must be seen
-  before replay can defend it.
+  before replay can defend it. **Compensating control (item 1 — confidence-floor
+  enforcement):** thin cold-start evidence yields **low confidence by construction**
+  (`propose()` sets confidence ≈ `n_experiences / 20`), so a cold-start harmful
+  commit lands **below `floor_commit`**, and the **read-time floor prevents it from
+  reaching behaviour** — the agent falls back to uniform. So the harm still *commits*
+  (replay can't stop it), but it **does not drive behaviour**; a `maintenance` run then
+  demotes the committed defect durably. Limitation plus stated control, not limitation
+  alone.
 - **Channel poisoning is undefended: nothing verifies a channel's self-reported
   confidence.** D1 defends *experience* poisoning only because the forged
   experiences are routed through the `agent-self-report` evaluator, which caps
