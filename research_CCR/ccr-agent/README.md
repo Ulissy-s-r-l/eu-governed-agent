@@ -60,9 +60,12 @@ ccr/
 ├── demo_transactions.py  # D1 poison rejected · D2 replay kills regression · D3 revert
 └── experiment_bvc.py     # B-vs-C ladder rung (doc 06 §3.1)
 tests/
-├── test_phase1.py   # Schema, chain integrity, Merkle proofs, GMP bridge, tamper tests
-└── test_phase34.py  # Gate, replay validation, commit, revert, read path
+├── test_phase1.py      # Schema, chain integrity, Merkle proofs, GMP bridge, tamper tests
+├── test_phase34.py     # Gate, held-out replay, commit, revert, read path
+├── test_approval.py    # cgr.cosign.v1 co-signed approval on the transaction
+└── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
 ```
+Also in `ccr/`: `cosign.py` (the co-signature envelope). Suite: **30 tests**.
 
 ## Run
 

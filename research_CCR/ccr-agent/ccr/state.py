@@ -21,6 +21,14 @@ from .experience import canonical_json
 
 GENESIS_COMMITMENT = "GENESIS"
 
+# doc 02 §3.6 confidence policy (versioned state). decay_clock "commits" ⇒ age is
+# measured in state versions since the entry was last set/confirmed.
+DEFAULT_CONFIDENCE_POLICY = {
+    "floor_commit": 0.55,
+    "decay_rate": 0.001,
+    "decay_clock": "commits",
+}
+
 
 @dataclass
 class PolicyEntry:
@@ -28,9 +36,32 @@ class PolicyEntry:
     distribution: dict[str, float]          # strategy/tool -> probability
     confidence: float
     updated_tx: str                         # I4: provenance to committing transaction
+    updated_version: int = 0                # state version when set/confirmed (decay anchor)
 
     def best(self) -> str:
         return max(self.distribution, key=self.distribution.get)
+
+
+def confidence_of(entry: PolicyEntry, current_version: int,
+                  policy: Optional[dict] = None) -> float:
+    """Read-time decayed confidence (doc 02 §3.6): the stored `confidence` is
+    immutable; decay is computed here from version-age and the decay policy."""
+    p = policy or DEFAULT_CONFIDENCE_POLICY
+    age = max(0, current_version - entry.updated_version)
+    return max(0.0, entry.confidence * (1.0 - p["decay_rate"] * age))
+
+
+def below_floor(entry: PolicyEntry, current_version: int,
+                policy: Optional[dict] = None) -> bool:
+    p = policy or DEFAULT_CONFIDENCE_POLICY
+    return confidence_of(entry, current_version, p) < p["floor_commit"]
+
+
+def is_uniform(distribution: dict[str, float], tol: float = 1e-9) -> bool:
+    if not distribution:
+        return True
+    vals = list(distribution.values())
+    return max(vals) - min(vals) < tol
 
 
 @dataclass
@@ -40,6 +71,8 @@ class CognitiveState:
     parent_commitment: str = GENESIS_COMMITMENT
     commitment: str = ""
     update_ref: Optional[str] = None        # tx_id that produced this state
+    confidence_policy: dict = field(         # doc 02 §3.6; versioned state
+        default_factory=lambda: dict(DEFAULT_CONFIDENCE_POLICY))
 
     def body(self) -> dict:
         d = asdict(self)
