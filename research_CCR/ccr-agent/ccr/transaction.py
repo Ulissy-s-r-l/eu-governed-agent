@@ -23,8 +23,9 @@ from typing import Optional
 from .experience import Experience, canonical_json, new_id, utcnow
 from .ledger import ExperienceLedger, LedgerEntry
 from .state import (
-    CognitiveState, PolicyEntry, confidence_of, below_floor, is_uniform,
+    CognitiveState, PolicyEntry, MemoryItem, confidence_of, below_floor, is_uniform,
 )
+from .support import root_support
 from . import cosign
 
 
@@ -108,20 +109,45 @@ class AdmissionGate:
         assert threshold < self.ceiling, (
             f"threshold {threshold} >= two-term ceiling {self.ceiling}: nothing admits")
 
-    def evaluate_evidence(self, evidence: list[Experience]) -> dict:
-        """Score a set of supporting experiences for a candidate update."""
-        n = len(evidence)
-        if n == 0:
+    def evaluate_evidence(self, evidence: list[Experience], *,
+                          corroborating: Optional[list[list[str]]] = None,
+                          reliability_of=None) -> dict:
+        """Score a set of supporting experiences for a candidate update.
+
+        `corroborating` (I6, doc 01 Def. 7.4a): exp_id groups of any *cited*
+        artifacts (e.g. a corroborating fact's `sources`). Support is counted over
+        `root_support`-deduplicated experiences — the union of evidence and
+        corroborating roots — never their sum, so a fact grown from the same
+        evidence cannot inflate the count.
+
+        `reliability_of` (item 5, doc 07 §2.2a): a callable `channel -> reliability`
+        from calibration. When supplied, the trust term uses the channel's
+        *observed* reliability instead of its *self-reported* confidence — the
+        "trust the channel, not the account" rule. A channel with no calibration
+        (reliability None) falls back to its self-reported confidence."""
+        if not evidence:
             return {"V": 0.0, "admit": False, "reason": "no evidence"}
-        trust = sum(e.evaluation.confidence for e in evidence) / n
-        scores = [e.evaluation.score for e in evidence]
-        info = sum(scores) / n
+        groups = [[e.exp_id for e in evidence]]
+        if corroborating:
+            groups.extend(corroborating)
+        n = len(root_support(*groups))            # I6: deduped independent roots
+        if reliability_of is not None:
+            trusts = []
+            for e in evidence:
+                ch = e.evaluation.channels[0] if e.evaluation.channels else None
+                r = reliability_of(ch) if ch else None
+                trusts.append(r if r is not None else e.evaluation.confidence)
+            trust = sum(trusts) / len(trusts)
+        else:
+            trust = sum(e.evaluation.confidence for e in evidence) / len(evidence)
+        info = sum(e.evaluation.score for e in evidence) / len(evidence)
         support = min(1.0, n / self.min_evidence)
         V = (self.w_trust * trust + self.w_info * info) * support
         admit = V >= self.threshold and n >= self.min_evidence
         return {"V": round(V, 4), "threshold": self.threshold, "admit": admit,
                 "trust": round(trust, 4), "info": round(info, 4),
-                "support": round(support, 4), "ceiling": self.ceiling, "n": n}
+                "support": round(support, 4), "ceiling": self.ceiling, "n": n,
+                "roots": n}
 
 
 # --------------------------------------------------------------------------
@@ -348,6 +374,57 @@ class LearningEngine:
             if not s or not cosign.verify_assertion(a, s, a.get("approver_key_id", "")):
                 return (False, "approver signature invalid")
         return (True, "ok")
+
+    # -- commit a semantic-memory consolidation (build-guide §2.1a/d) ---------
+
+    def commit_memory(self, state: CognitiveState, cand, evidence: list[Experience], *,
+                      reliability_of=None) -> tuple[TransactionRecord, CognitiveState]:
+        """Insert or re-confirm a semantic_memory item (a `MemoryCandidate` from
+        the Consolidator), through the gate. `sources` = the scored evidence's
+        root exp_ids (I4). The gate counts support over `root_support` (I6), so a
+        fact grown from a policy's own evidence carries no independent inflation."""
+        admission = self.gate.evaluate_evidence(evidence, reliability_of=reliability_of)
+        sources = [e.exp_id for e in evidence]
+        tx = TransactionRecord(
+            tx_id=new_id("tx"), tx_type="learn", parent_state=state.commitment,
+            status="rejected", admission=admission, validation={},
+            delta={"op": cand.op, "target": "semantic_memory", "type": cand.type,
+                   "content": cand.content, "sources": sources,
+                   "confidence": cand.confidence, "mem_id": cand.mem_id},
+            new_commitment=None)
+
+        if not admission["admit"]:
+            tx.validation = {"verdict": "not_reached", "reason": "admission gate"}
+            self._record(tx); return tx, state
+        if not sources:                                # I4: provenance completeness
+            tx.validation = {"verdict": "reject", "reason": "no sources (violates I4)"}
+            self._record(tx); return tx, state
+        if cand.op == "confirm" and cand.mem_id not in state.semantic_memory:
+            tx.validation = {"verdict": "reject", "reason": "confirm target not found"}
+            self._record(tx); return tx, state
+        tx.validation = {"verdict": "commit"}
+
+        new_state = state.copy()
+        new_state.version = state.version + 1
+        new_state.parent_commitment = state.commitment
+        if cand.op == "confirm":
+            item = new_state.semantic_memory[cand.mem_id]
+            item.last_confirmed_tx = tx.tx_id          # §2.1d: refresh the confidence clock
+            item.confidence = max(item.confidence, cand.confidence)
+        else:
+            mem_id = new_id("mem")
+            new_state.semantic_memory[mem_id] = MemoryItem(
+                id=mem_id, type=cand.type, content=cand.content,
+                confidence=cand.confidence, sources=sources, status="active",
+                created_tx=tx.tx_id, last_confirmed_tx=tx.tx_id)
+            tx.delta["mem_id"] = mem_id
+        new_state.update_ref = tx.tx_id
+        new_state.seal()
+
+        tx.status = "committed"
+        tx.new_commitment = new_state.commitment
+        self._record(tx)
+        return tx, new_state
 
     # -- maintenance: evidence-free demotion (doc 04 §5A) ---------------------
 
