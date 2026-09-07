@@ -32,6 +32,7 @@ class MemoryCandidate:
     confidence: float
     region: str
     mem_id: Optional[str] = None     # target item for `confirm`
+    supersedes_mem_id: Optional[str] = None   # prior belief this insert supersedes (native GMP op)
 
 
 class Consolidator:
