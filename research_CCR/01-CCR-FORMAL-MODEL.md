@@ -191,6 +191,42 @@ The contrast with prior formalizations is the point. In Memento's M-MDP, the mem
 
 **Obligation 7.4 (Invariant-preserving commit).** Commit is permitted only if `Ĉ = C_n ⊕ ΔC` satisfies I1–I5. Validation therefore includes a mechanical invariant-checking stage — cheap, deterministic, and independent of all learned components — that acts as the type system of the state space. Candidates that violate invariants are rejected without consuming simulation budget. This obligation is the formal reason the Cognitive State Manager is the sole writer (document 00, §6.9): concentrating writes concentrates the invariant check at a single, auditable chokepoint.
 
+**Definition 7.4a (Support independence — I6), beside I4.** *(Added 2026-09-07.)* Where I4 requires that
+every content item **have** a derivation path to the ledger, **I6 governs how that provenance is
+_counted_ when it is used as support.** For any candidate `ΔC`, define its **effective support** as the
+**union of root experience ids** reachable from everything the candidate cites — its own justification
+**and** any corroborating artifact it invokes (a consolidated fact, a strategy, a prior policy):
+
+\[
+\mathrm{support}(\Delta C) \;=\; \Big| \bigcup_{a \,\in\, \mathrm{cited}(\Delta C)} \mathrm{roots}(a) \Big|
+\quad\text{(count the union of root } \texttt{exp\_id}\text{s, never the sum across artifacts).}
+\]
+
+**I6:** any functional that scores a candidate by the weight of its evidence — the admission functional
+`V` (§3, §5) and the replay/regression support terms (§7.4) — MUST compute support over
+`roots(·)`-deduplicated experiences, **not** by summing per-artifact counts.
+
+*Why this is necessary, and why it is not one of I1–I5.* Reuse of evidence **at derivation** is
+legitimate and is exactly what consolidation is for: the same episodes that ground a policy may also be
+distilled into a fact. The error is **at consumption** — a fact derived from a policy's own evidence,
+read later as *independent* corroboration, makes the policy look better-supported than it is. This is the
+held-out-replay bug (§7.4) **one level out**: there, `Replay` scored a candidate against its own
+justifying evidence; here, a candidate is scored against a **derivative** of its own justifying evidence.
+I6 states the general principle — the disjointness discipline of replay, lifted from *within a single
+validation* to *cross-artifact consumption*. It is stated **beside I4 but is not in the I1–I5 set**,
+because I1–I5 are static well-formedness predicates checked on a state `C` by the mechanical stage
+(Obligation 7.4), whereas I6 is a **discipline on the support _functional_** — it constrains how `V` and
+the validation stages read provenance, not whether `C` is well-formed. It is therefore enforced wherever
+support is summed, not at the single invariant chokepoint.
+
+**Cost, stated honestly.** I6 makes **provenance resolution mandatory wherever support is summed**: every
+support-counting site must resolve cited artifacts to their root `exp_id`s before weighing them. The
+resolution is deterministic (it walks `sources`/`justification` to ledger leaves), but it is not free,
+and **the over-support returns silently if the discipline lapses anywhere** — a single site that sums
+per-artifact counts reintroduces the double-count with no signal. The mitigation (implementation, not
+spec) is to make `roots(·)` a single shared function that every consumer calls, so there is one place to
+be correct rather than many places to drift.
+
 ### 7.4 Validation semantics
 
 **Definition 7.5 (Validation predicate).** `Validate(C_n, Ĉ, ΔC)` is the conjunction of stage verdicts selected by `ΔC.risk`:
@@ -275,6 +311,7 @@ The properties below are stated as candidate invariants of the validated cogniti
 | **Ledger immutability** | `∀i: ℒ[i]` is append-only; reinterpretation occurs in state, never in ledger | Ledger design (§4.2) | §22 |
 | **Recovery completeness** | Any committed update's influence is removable by revert with intact history | Rollback semantics (§8.4, Prop. 8.5) | RQ7 |
 | **Invariant preservation** | `Committed(C_n) ⇒ C_n ⊨ I1–I5` | Obligation 7.4 | — |
+| **Support independence (I6)** | Any evidence-weighing functional scores over `roots(·)`-deduplicated experiences, never per-artifact sums | Definition 7.4a | — |
 
 Two remarks on the status of these properties. First, they are **architectural invariants, not learning guarantees**: they state that whatever the system learns, it learns under discipline — nothing commits without validation, nothing executes without authority, nothing is lost without record. They do not, and cannot, state that what is learned is *good*; that is the empirical burden of the benchmark program. The distinction is the formal version of document 00's core claim that CCR contributes trustworthiness rather than raw capability. Second, the properties are deliberately stated to be **mechanically checkable**: each reduces to signature verification, chain verification, or record inspection, which is what makes the Phase 8 verification program realistic rather than aspirational — the system was designed so that its trust properties live in its logs, not in the internals of any learned component.
 
