@@ -21,6 +21,7 @@ from typing import Optional
 
 from .experience import Experience
 from .ledger import ExperienceLedger
+from .contradiction import claim_content, SENSE_RELIABLE, SENSE_UNRELIABLE
 
 
 @dataclass
@@ -39,10 +40,19 @@ class Consolidator:
     """Distils repeated evaluated patterns into memory candidates."""
 
     def __init__(self, ledger: ExperienceLedger,
-                 min_support: int = 5, min_conf: float = 0.6):
+                 min_support: int = 5, min_conf: float = 0.6,
+                 max_unreliable: float = 0.4):
         self.ledger = ledger
         self.min_support = min_support
         self.min_conf = min_conf
+        # A group with >= min_support but mean score <= max_unreliable emits a
+        # NEGATIVE claim. The dead band (max_unreliable, min_conf) emits neither,
+        # so a marginal tool does not flip-flop between senses. The negative claim
+        # is what gives contradiction detection (doc 02 §3.1) a live production
+        # trigger: two passes over shifting evidence can produce an active
+        # reliable + active unreliable claim for one (region, tool) with no
+        # supersedes between them — a genuine contested pair.
+        self.max_unreliable = max_unreliable
 
     def _groups(self, region: str) -> dict[str, list[Experience]]:
         groups: dict[str, list[Experience]] = defaultdict(list)
@@ -55,20 +65,26 @@ class Consolidator:
 
     def propose_facts(self, region: str,
                       existing: Optional[dict] = None) -> list[MemoryCandidate]:
-        """Groups with >= min_support and mean score >= min_conf become fact
-        candidates. If an active fact for the same (region, tool) already exists
-        (`existing`: id -> MemoryItem), emit a `confirm` instead of a duplicate
-        `insert` (build-guide §2.1d re-confirmation)."""
+        """Groups with >= min_support become claim candidates: mean >= min_conf →
+        a `reliable` claim, mean <= max_unreliable → an `unreliable` claim, in
+        between → nothing (dead band). If an active claim with the same content for
+        the same (region, tool) already exists (`existing`: id -> MemoryItem),
+        emit a `confirm` instead of a duplicate `insert` (build-guide §2.1d
+        re-confirmation)."""
         out: list[MemoryCandidate] = []
         existing = existing or {}
         for tool, group in self._groups(region).items():
             if len(group) < self.min_support:
                 continue
             mean = sum(e.evaluation.score for e in group) / len(group)
-            if mean < self.min_conf:
-                continue
+            if mean >= self.min_conf:
+                sense = SENSE_RELIABLE
+            elif mean <= self.max_unreliable:
+                sense = SENSE_UNRELIABLE            # negative claim (doc 02 §3.1 trigger)
+            else:
+                continue                            # dead band: emit neither
             sources = [e.exp_id for e in group]
-            content = f"tool:{tool} reliable in region:{region}"
+            content = claim_content(tool, region, sense)
             prior = next((mid for mid, m in existing.items()
                           if getattr(m, "content", None) == content
                           and getattr(m, "status", "") == "active"), None)

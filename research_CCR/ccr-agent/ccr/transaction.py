@@ -29,6 +29,7 @@ from .support import root_support
 from .calibration import (
     reliability_from_state, recompute_reliability, REFERENCE_RELIABILITY,
 )
+from .contradiction import detect_and_mark, reconcile_contested
 from . import cosign
 
 
@@ -425,10 +426,15 @@ class LearningEngine:
         new_state = state.copy()
         new_state.version = state.version + 1
         new_state.parent_commitment = state.commitment
+        supersedes_mem_id = getattr(cand, "supersedes_mem_id", None)
         if cand.op == "confirm":
             item = new_state.semantic_memory[cand.mem_id]
             item.last_confirmed_tx = tx.tx_id          # §2.1d: refresh the confidence clock
             item.confidence = max(item.confidence, cand.confidence)
+            # Re-confirmation is SUPPORT, not resolution (doc 02 §3.1): a confirm
+            # MUST NOT un-contest. Status is deliberately left untouched — letting
+            # repetition of one side clear a contested pair would be exactly the
+            # confidence-driven auto-resolution the amendment forbids.
             committed_item = item
         else:
             mem_id = new_id("mem")
@@ -438,6 +444,25 @@ class LearningEngine:
                 created_tx=tx.tx_id, last_confirmed_tx=tx.tx_id)
             new_state.semantic_memory[mem_id] = committed_item
             tx.delta["mem_id"] = mem_id
+            # A superseding insert deprecates its in-state predecessor (previously
+            # this only affected GMP; the CSO copy kept the old item active). This
+            # is what lets a supersede RESOLVE a contested pair.
+            if supersedes_mem_id and supersedes_mem_id in new_state.semantic_memory:
+                new_state.semantic_memory[supersedes_mem_id].status = "deprecated"
+
+        # Resolution then detection (doc 02 §3.1). reconcile FIRST: a predecessor
+        # just deprecated by a supersede may free its contested partner back to
+        # active. detect SECOND: mark both members of any conflict the new/active
+        # set now contains. Detection only ever marks active→contested and never
+        # touches confidence — it MARKS, it does not resolve; resolution is this
+        # (later) transaction, never a confidence tie-break.
+        restored = reconcile_contested(new_state)
+        marked = detect_and_mark(new_state)
+        if restored or marked:
+            tx.validation = {**tx.validation,
+                             "contested_marked": marked,
+                             "contested_restored": restored}
+
         new_state.update_ref = tx.tx_id
         new_state.seal()
 
