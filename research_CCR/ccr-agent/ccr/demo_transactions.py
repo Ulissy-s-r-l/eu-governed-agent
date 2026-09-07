@@ -154,7 +154,9 @@ def main() -> None:
     state_before = agent.state
     tx3, state_harmed = engine.commit(agent.state, bad_region, luck)
     agent.on_state(state_harmed)
-    chosen = agent.select_tool(bad_region)
+    committed_pref = agent.state.policy_for(bad_region).best()   # the committed defect
+    behavioural = agent.select_tool(bad_region)                  # what the agent DOES
+    chosen = committed_pref                                       # detection targets the defect
     v3 = tx3.validation
     print(f"committed tx {tx3.tx_id} -> state v{state_harmed.version}")
     # HONEST NARRATIVE — why did a harmful update pass validation?
@@ -168,14 +170,20 @@ def main() -> None:
           f"cold_start_no_incumbent={v3.get('cold_start_no_incumbent')}; "
           f"held_out_n={v3.get('held_out_n')}, candidate held-out "
           f"rate={v3.get('cand_rate')} — replay saw it but could not compare.")
-    print(f"BEHAVIOR CHANGED: agent now selects '{chosen}' in {bad_region} "
-          f"(true reliability {sim.reliability(chosen, bad_region):.3f}, "
+    print(f"COMMITTED POLICY prefers '{committed_pref}' in {bad_region} "
+          f"(true reliability {sim.reliability(committed_pref, bad_region):.3f}, "
           f"best is {sim.best_tool(bad_region)} at "
-          f"{sim.reliability(sim.best_tool(bad_region), bad_region):.3f})")
+          f"{sim.reliability(sim.best_tool(bad_region), bad_region):.3f}) — a latent I3 defect")
+    # DEFENSE IN DEPTH (item 1): the read-time confidence floor already neutralises the
+    # BEHAVIOURAL harm — the cold-start policy committed at low confidence is below floor,
+    # so the agent does not act on it (falls back to uniform). The committed policy is
+    # still a defect in state, which the monitor + revert clean up durably.
+    print(f"READ-TIME FLOOR: agent actually selects '{behavioural}' "
+          f"(uniform fallback; the below-floor preference does not drive behaviour)")
 
-    # detection: monitor sees the committed policy prefers a low-reliability tool
-    detected = sim.reliability(chosen, bad_region) < 0.5
-    print(f"detection (drift monitor): policy prefers sub-0.5 tool -> {detected}")
+    # detection: monitor inspects COMMITTED state (not behaviour) and sees a sub-0.5 pref
+    detected = sim.reliability(committed_pref, bad_region) < 0.5
+    print(f"detection (drift monitor over committed policy): prefers sub-0.5 tool -> {detected}")
 
     # revert: forward-only, new commit with ancestor content
     tx4, state_restored = engine.revert(agent.state, state_before,

@@ -207,10 +207,15 @@ policy equals the strategy; a strategy proposed from 2 regions (< k) is rejected
 
 ### 2.4 Confidence-floor enforcement
 
-**Spec:** doc 02 §3.6, doc 04 **§5A** (the `maintenance` tx type). **Status (corrected 2026-09-07 —
-see the note below):** the confidence machinery is **unbuilt**. `PolicyEntry` carries a bare
-`confidence` float; there is **no `confidence_of`, no `confidence_map`, no `decay_rate`/`decay_clock`,
-no `floor_commit`, and no `status` field** in `state.py`. So decay is **neither computed nor enforced** —
+**Spec:** doc 02 §3.6, doc 04 **§5A** (the `maintenance` tx type). **Status: BUILT (2026-09-07)** —
+`state.py` now has the §3.6 confidence policy (`floor_commit`/`decay_rate`/`decay_clock`),
+read-time `confidence_of`/`below_floor`, and `PolicyEntry.updated_version`; `select_tool` enforces the
+read-time floor (below-floor ⇒ uniform); `LearningEngine.maintenance()` emits `maintenance` transactions
+demoting below-floor policies to uniform (`tests/test_maintenance.py`, 6 tests). *The historical status
+below is retained as a correction record.* — **Historical status (corrected 2026-09-07):** an earlier
+draft claimed the confidence machinery existed; in fact it was **unbuilt** — `PolicyEntry` carried a bare
+`confidence` float with **no `confidence_of`, no `confidence_map`, no `decay_rate`/`decay_clock`,
+no `floor_commit`, and no `status` field**. Decay was **neither computed nor enforced** —
 a policy entry drives `select_tool` regardless of confidence, which violates the doc-02 contract that
 confidence is behavioral, not decorative. Item 1 is therefore *build §3.6, then enforce it*, not *add a
 sweep to existing decay*.

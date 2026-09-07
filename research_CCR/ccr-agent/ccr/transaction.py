@@ -22,7 +22,9 @@ from typing import Optional
 
 from .experience import Experience, canonical_json, new_id, utcnow
 from .ledger import ExperienceLedger, LedgerEntry
-from .state import CognitiveState, PolicyEntry
+from .state import (
+    CognitiveState, PolicyEntry, confidence_of, below_floor, is_uniform,
+)
 from . import cosign
 
 
@@ -305,7 +307,8 @@ class LearningEngine:
         new_state.parent_commitment = state.commitment
         new_state.policies[region] = PolicyEntry(
             region=region, distribution=cand.distribution,
-            confidence=cand.confidence, updated_tx=tx.tx_id)
+            confidence=cand.confidence, updated_tx=tx.tx_id,
+            updated_version=new_state.version)
         new_state.update_ref = tx.tx_id
         new_state.seal()
 
@@ -345,6 +348,75 @@ class LearningEngine:
             if not s or not cosign.verify_assertion(a, s, a.get("approver_key_id", "")):
                 return (False, "approver signature invalid")
         return (True, "ok")
+
+    # -- maintenance: evidence-free demotion (doc 04 §5A) ---------------------
+
+    def maintenance(self, state: CognitiveState
+                    ) -> tuple[Optional[TransactionRecord], CognitiveState]:
+        """Durably demote below-floor policy entries to uniform (doc 04 §5A).
+
+        Evidence-free: NO admission gate (there is nothing to score). The only
+        validation is the INVARIANT that each target is genuinely below
+        `floor_commit` at the current version — evaluated against the recorded
+        decay computation, which is deterministic and recorded as justification.
+        Only `policy_table` exists today; memory/preference demotion is specified
+        (doc 04 §5A) with nothing to act on yet. Returns (None, state) when
+        nothing is below floor."""
+        pol = state.confidence_policy
+        # target = below floor AND actually learned (not already uniform / genesis)
+        targets = {
+            r: e for r, e in state.policies.items()
+            if below_floor(e, state.version, pol) and not is_uniform(e.distribution)
+        }
+        if not targets:
+            return None, state
+
+        # justification = the decay computation per target (deterministic, recorded)
+        justification = {
+            r: {"stored_confidence": e.confidence,
+                "updated_version": e.updated_version,
+                "age_commits": state.version - e.updated_version,
+                "decayed_confidence": round(confidence_of(e, state.version, pol), 6),
+                "floor_commit": pol["floor_commit"], "was": e.best()}
+            for r, e in targets.items()
+        }
+        # invariant re-check (fail closed if any target is not actually below floor)
+        invariant_ok = all(below_floor(e, state.version, pol) for e in targets.values())
+
+        tx = TransactionRecord(
+            tx_id=new_id("tx"), tx_type="maintenance",
+            parent_state=state.commitment, status="rejected",
+            admission={"skipped": True,
+                       "reason": "maintenance: evidence-free demotion (doc 04 §5A)"},
+            validation={}, delta={"op": "demote", "target": "policy_table",
+                                  "regions": list(targets), "to": "uniform",
+                                  "justification": justification},
+            new_commitment=None)
+
+        if not invariant_ok:
+            tx.validation = {"verdict": "reject",
+                             "reason": "invariant: a target is not below floor"}
+            self._record(tx)
+            return tx, state
+        tx.validation = {"verdict": "commit", "invariant": {"all_below_floor": True},
+                         "justification": justification}
+
+        new_state = state.copy()
+        new_state.version = state.version + 1
+        new_state.parent_commitment = state.commitment
+        for r, e in targets.items():
+            tools = list(e.distribution)
+            new_state.policies[r] = PolicyEntry(
+                region=r, distribution={t: 1.0 / len(tools) for t in tools},
+                confidence=0.0, updated_tx=tx.tx_id,
+                updated_version=new_state.version)       # demoted to uniform default
+        new_state.update_ref = tx.tx_id
+        new_state.seal()
+
+        tx.status = "committed"
+        tx.new_commitment = new_state.commitment
+        self._record(tx)
+        return tx, new_state
 
     # -- revert (doc 01 Def. 8.4, doc 04 §5) ----------------------------------
 
@@ -392,6 +464,11 @@ class LearningAgent:
     def select_tool(self, region: str) -> str:
         policy = self.state.policy_for(region)
         if policy is None:
+            return self.tools[0]
+        # read-time floor (doc 02 §3.6): a below-floor belief does NOT drive
+        # behaviour — fall back to uniform (the default), immediately, without
+        # waiting for a maintenance sweep.
+        if below_floor(policy, self.state.version, self.state.confidence_policy):
             return self.tools[0]
         return policy.best()
 
