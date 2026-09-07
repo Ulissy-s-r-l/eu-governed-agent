@@ -98,11 +98,25 @@ class GMPInMemoryBackend:
             self._facts[old_ref].superseded_by = fact.fact_id
         return self.write(fact)
 
+    def close(self, fact_id: str, at: Optional[str]) -> None:
+        """Bi-temporal close/reopen: set `valid_until` on a fact (or clear it with
+        None). Unlike `supersede`, this names NO successor — it marks a fact
+        present-but-not-currently-valid. The CCR contested-status mapping (doc 02
+        §3.1) uses this to quarantine a belief without asserting a replacement.
+        `fact_id` is unchanged (valid_until is not part of content identity)."""
+        if fact_id in self._facts:
+            self._facts[fact_id].valid_until = at
+
     def retrieve(self, predicate: Optional[str] = None,
                  subject: Optional[str] = None) -> list[GMPFact]:
         out = []
         for f in self._facts.values():
-            if f.tenant_id != self.tenant_id or f.superseded_by:
+            # excluded: other tenants; superseded (structural); or bi-temporally
+            # closed (valid_until set) — the latter is how a contested belief drops
+            # out of the current-validity view (doc 02 §3.1). A full store would
+            # compare valid_until to query time; this minimal store treats any set
+            # valid_until as "closed as of now".
+            if f.tenant_id != self.tenant_id or f.superseded_by or f.valid_until:
                 continue
             if predicate and f.predicate != predicate:
                 continue

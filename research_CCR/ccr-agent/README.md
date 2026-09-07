@@ -66,11 +66,11 @@ tests/
 ├── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
 ├── test_consolidation.py # consolidation (§2.1a/d) + I6 support independence
 ├── test_calibration.py   # per-channel reliability + recalibrate tx (doc 07 §2.2a, doc 04 §5B)
-├── test_gmp_memory.py    # GMP-backed memory persistence; native supersede (ADR-0008)
+├── test_gmp_memory.py    # GMP memory persistence; native supersede + contested→GMP (doc 02 §3.1)
 └── test_contradiction.py # contradiction detection → contested status (doc 02 §3.1)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
-`consolidation.py`, `calibration.py`, `gmp_memory.py`, `contradiction.py`. Suite: **60 tests**.
+`consolidation.py`, `calibration.py`, `gmp_memory.py`, `contradiction.py`. Suite: **63 tests**.
 
 ## Run
 
@@ -98,6 +98,31 @@ gate. `ccr/state.py` + `ccr/transaction.py` add:
   replay, do-no-harm) → atomic commit → forward-only revert.
 - **LearningAgent** — the read path Phase 1 lacked: decisions are a function
   of committed state.
+
+### Contradiction detection → `contested` (doc 02 §3.1): manufactured case, real machinery
+
+Two halves, because each alone misleads:
+
+- **The case is manufactured.** The `Consolidator` emits one monotone-positive
+  claim shape, so **no two facts it emits in the wild can contradict** — a region
+  can have several reliable tools. The `unreliable` claim (`max_unreliable`) exists
+  *only* to make the detector **reachable**. The system has **not** observed a
+  contradiction; "contradiction detection: built" is not evidence one was found.
+- **The machinery is not manufactured.** Mark-both, the non-behavioural read
+  (`behavioural_memory`, the memory analogue of the confidence-floor read gate),
+  reconcile-on-resolution (`reconcile_contested`), and the **MUST-NOT-auto-resolve**
+  rule are real and load-bearing. They matter the first time a contested pair
+  arrives from a **non-manufactured** source — a second emitter, human-asserted
+  facts via `cgr.cosign.v1`, a merged branch. The manufactured trigger is not
+  licence to rip the detector out as dead code.
+
+`contested` also reaches the durable tier (GMP): a contested belief is quarantined
+via `valid_until` and drops out of the standard `retrieve` path, with a
+`ccr:mem/contested` marker recording the partner. **This exclusion is conventional,
+not structural** — unlike `superseded_by` (native, single-successor), "contested ⇒
+`valid_until`" is a CCR convention: a consumer reading the **audit view** still
+sees the belief. Tested against a convention-unaware `audit()` consumer, so the
+ceiling is documented, not hidden.
 
 `ccr/demo_transactions.py` proves the three properties that differentiate CCR
 (none of which require the agent to be good at anything):

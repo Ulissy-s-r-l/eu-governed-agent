@@ -26,6 +26,22 @@ MUST NOT AUTO-RESOLVE (doc 02 §3.1). Detection's only authority is to MARK a
 conflict — set both members `contested`, making neither behavioural. It never
 demotes the lower-confidence item, never picks a winner. Resolution is a later
 transaction (a supersede) or a human (a cgr.cosign.v1 co-signature), not this code.
+
+THE CONTRADICTION CASE IS MANUFACTURED — AND THE MACHINERY IS NOT. Say both, because
+each half alone misleads:
+
+  - MANUFACTURED: the `Consolidator` emits one monotone-positive shape, so no two
+    facts it emits in the wild can contradict each other — a region can have several
+    reliable tools. The `unreliable` claim exists ONLY so this detector is
+    reachable; the system has NOT observed a contradiction. "Contradiction
+    detection: built" without this sentence reads as evidence a contradiction was
+    found. It was not — the detector exercises a case constructed for it.
+  - NOT MANUFACTURED: mark-both, the non-behavioural read (`behavioural_memory`),
+    reconcile-on-resolution (`reconcile_contested`), and no-auto-resolve are real
+    and load-bearing. They will matter the first time a contested pair arrives from
+    a NON-manufactured source — a second emitter, human-asserted facts via cosign,
+    a merged branch. Do not read the manufactured trigger as licence to rip the
+    detector out as dead code; it is the mechanism waiting for that first real pair.
 """
 from __future__ import annotations
 
