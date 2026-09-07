@@ -196,6 +196,8 @@ The graph is stored inside the CSO (it is versioned state) but its nodes are *re
 
 This component is the L4 (meta-learning) foothold at schema level: the evaluator's per-channel reliability estimates are *state*, updated through transactions, and consumed by the admission function's trust term. Storing verdict counts alongside reliability exposes the estimator's support — a channel with reliability 0.71 over 3,411 verdicts is a different object than one with 0.71 over 12 — and the admission function is expected to use the pair, not the point estimate.
 
+**What reliability is measured against (operationalized 2026-09-07).** The paragraph above says reliability is *updated through transactions* — a mechanism — but does **not** name what a verdict is scored *against*. It is scored against a **designated reference channel** trusted for reasons extrinsic to the system (doc 07 §2.2a): reliability is the channel's agreement rate with that reference, so the `(reliability, verdicts)` pair the trust term consumes is **only as meaningful as the reference is trustworthy**. This has a hard consequence for the schema: **`reliability` is well-defined only where the deployment has such a reference** — a domain that produces delayed, independent, outcome-grounded signals (tests, confirmed outcomes, a vetted oracle). Where none exists (the AML case, `Ulissy-s-r-l/eu-governed-agent` ADR-0009), the calibration column is **undefined, not zero**: reliability cannot be established at all, and a consumer MUST NOT read a default/self-reported value as if it were calibrated. See doc 07 §2.2a for the full limit and its identity-assurance parallel (gap 3a).
+
 ### 3.9 provenance_index and lineage
 
 The provenance index is the materialization of I4:
