@@ -66,10 +66,11 @@ tests/
 ├── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
 ├── test_consolidation.py # consolidation (§2.1a/d) + I6 support independence
 ├── test_calibration.py   # per-channel reliability + recalibrate tx (doc 07 §2.2a, doc 04 §5B)
-└── test_gmp_memory.py    # GMP-backed memory persistence; native supersede (ADR-0008)
+├── test_gmp_memory.py    # GMP-backed memory persistence; native supersede (ADR-0008)
+└── test_contradiction.py # contradiction detection → contested status (doc 02 §3.1)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
-`consolidation.py`, `calibration.py`, `gmp_memory.py`. Suite: **48 tests**.
+`consolidation.py`, `calibration.py`, `gmp_memory.py`, `contradiction.py`. Suite: **60 tests**.
 
 ## Run
 
