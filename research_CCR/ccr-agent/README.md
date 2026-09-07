@@ -65,11 +65,11 @@ tests/
 ├── test_approval.py    # cgr.cosign.v1 co-signed approval on the transaction
 ├── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
 ├── test_consolidation.py # consolidation (§2.1a/d) + I6 support independence
-├── test_calibration.py   # per-channel reliability vs a reference channel (doc 07 §2.2a)
+├── test_calibration.py   # per-channel reliability + recalibrate tx (doc 07 §2.2a, doc 04 §5B)
 └── test_gmp_memory.py    # GMP-backed memory persistence; native supersede (ADR-0008)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
-`consolidation.py`, `calibration.py`, `gmp_memory.py`. Suite: **42 tests**.
+`consolidation.py`, `calibration.py`, `gmp_memory.py`. Suite: **48 tests**.
 
 ## Run
 
@@ -166,7 +166,13 @@ Every C-arm ledger verifies its hash chain end-to-end.
   independent, outcome-grounded signals — tests, confirmed outcomes, a vetted oracle),
   `CalibrationLoop` measures each channel's **observed** reliability against it and the
   gate's trust term uses that over the self-report (tested: a forged 0.99 self-report is
-  trusted at its observed ~0.25). **Still open where no reference exists** — AML per
+  trusted at its observed ~0.25). **The gate reads that reliability from COMMITTED state
+  only (doc 04 §5B):** a live loop advises but cannot steer the gate; its numbers become
+  behavioural exclusively through a committed `recalibrate` transaction whose invariant
+  re-check recomputes each reliability from its recorded observation window, holds the
+  reference channel unchanged, and forbids any channel outranking the reference. So the
+  control is not just *available* — it is *non-bypassable by an uncommitted loop*, and
+  auditable/revertable once committed. **Still open where no reference exists** — AML per
   ADR-0009 has no correctness signal, so no channel can be established as a reference,
   calibration degrades to consensus/imitation, and the account-vs-channel gap stays open
   there. Same extrinsic-trust limit as identity assurance (ADR-0009 gap 3a). Closed with

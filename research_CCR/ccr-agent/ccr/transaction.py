@@ -26,6 +26,9 @@ from .state import (
     CognitiveState, PolicyEntry, MemoryItem, confidence_of, below_floor, is_uniform,
 )
 from .support import root_support
+from .calibration import (
+    reliability_from_state, recompute_reliability, REFERENCE_RELIABILITY,
+)
 from . import cosign
 
 
@@ -120,11 +123,18 @@ class AdmissionGate:
         corroborating roots — never their sum, so a fact grown from the same
         evidence cannot inflate the count.
 
-        `reliability_of` (item 5, doc 07 §2.2a): a callable `channel -> reliability`
-        from calibration. When supplied, the trust term uses the channel's
+        `reliability_of` (item 5, doc 07 §2.2a; doc 04 §5B): a callable
+        `channel -> reliability`. When supplied, the trust term uses the channel's
         *observed* reliability instead of its *self-reported* confidence — the
         "trust the channel, not the account" rule. A channel with no calibration
-        (reliability None) falls back to its self-reported confidence."""
+        (reliability None) falls back to its self-reported confidence.
+
+        WIRING (doc 04 §5B): on the engine's commit paths this callable is
+        derived from COMMITTED state (`reliability_from_state(state.evaluation_history)`),
+        never from a live `CalibrationLoop`. A live loop's numbers reach the gate
+        only after a committed `recalibrate` tx writes them into `evaluation_history`.
+        The parameter remains here for direct unit-testing of the scorer; the
+        engine does not let a caller inject a live loop."""
         if not evidence:
             return {"V": 0.0, "admit": False, "reason": "no evidence"}
         groups = [[e.exp_id for e in evidence]]
@@ -378,12 +388,19 @@ class LearningEngine:
 
     # -- commit a semantic-memory consolidation (build-guide §2.1a/d) ---------
 
-    def commit_memory(self, state: CognitiveState, cand, evidence: list[Experience], *,
-                      reliability_of=None) -> tuple[TransactionRecord, CognitiveState]:
+    def commit_memory(self, state: CognitiveState, cand, evidence: list[Experience],
+                      ) -> tuple[TransactionRecord, CognitiveState]:
         """Insert or re-confirm a semantic_memory item (a `MemoryCandidate` from
         the Consolidator), through the gate. `sources` = the scored evidence's
         root exp_ids (I4). The gate counts support over `root_support` (I6), so a
-        fact grown from a policy's own evidence carries no independent inflation."""
+        fact grown from a policy's own evidence carries no independent inflation.
+
+        The gate's trust term reads channel reliability from COMMITTED state only
+        (doc 04 §5B): `reliability_of` is derived here from
+        `state.evaluation_history`, NOT accepted from the caller — a live
+        `CalibrationLoop` cannot steer this gate; only a committed `recalibrate`
+        tx can move these numbers."""
+        reliability_of = reliability_from_state(state.evaluation_history)
         admission = self.gate.evaluate_evidence(evidence, reliability_of=reliability_of)
         sources = [e.exp_id for e in evidence]
         tx = TransactionRecord(
@@ -495,6 +512,116 @@ class LearningEngine:
                 region=r, distribution={t: 1.0 / len(tools) for t in tools},
                 confidence=0.0, updated_tx=tx.tx_id,
                 updated_version=new_state.version)       # demoted to uniform default
+        new_state.update_ref = tx.tx_id
+        new_state.seal()
+
+        tx.status = "committed"
+        tx.new_commitment = new_state.commitment
+        self._record(tx)
+        return tx, new_state
+
+    # -- recalibrate: commit per-channel reliability (doc 04 §5B) --------------
+
+    def recalibrate(self, state: CognitiveState, loop
+                    ) -> tuple[TransactionRecord, CognitiveState]:
+        """Commit a live `CalibrationLoop`'s per-channel reliabilities into
+        `evaluation_history` (doc 04 §5B). This is the ONLY path by which a
+        calibration number becomes behavioural — the gate reads reliability from
+        committed state, so until this commits, the loop merely advises.
+
+        Evidence-free, admission bypassed — but for a DIFFERENT reason than
+        maintenance (§5A). §5A bypasses because a decay computation is not
+        learning-value evidence. §5B bypasses because the gate's trust term
+        CONSUMES calibration output: routing a recalibration through that gate
+        would be self-certification — the loop grading its own new reliabilities
+        with a gate those numbers determine (CIRCULARITY). So there is no
+        admission; validation is an INVARIANT RE-CHECK, not replay:
+
+          1. every submitted reliability MUST recompute from its recorded
+             observation window (the window is the tx's provenance);
+          2. the reference channel is designated once and unchanged thereafter —
+             the FIRST recalibrate commits the designation; every later one
+             verifies it against committed state (no silent re-anchoring);
+          3. no calibrated channel outranks the reference.
+
+        Forward-only and revertable: it produces a normal sealed state, so
+        `revert` restores the prior `evaluation_history` like any other commit."""
+        submitted = loop.to_state()          # {"reference", "channels": {c: {reliability, window}}}
+        ref = submitted["reference"]
+        channels = submitted["channels"]
+
+        committed = state.evaluation_history or {}
+        committed_ref = committed.get("reference")
+
+        tx = TransactionRecord(
+            tx_id=new_id("tx"), tx_type="recalibrate",
+            parent_state=state.commitment, status="rejected",
+            admission={"skipped": True,
+                       "reason": ("recalibrate: evidence-free reliability commit "
+                                  "(doc 04 §5B); bypass reason = circularity "
+                                  "(gate consumes calibration output → self-certification)")},
+            validation={},
+            delta={"op": "recalibrate", "target": "evaluation_history",
+                   "reference": ref,
+                   "channels": {c: {"reliability": v["reliability"],
+                                    "window": v["window"]}
+                                for c, v in channels.items()}},
+            new_commitment=None)
+
+        # invariant 2: reference designated once, unchanged thereafter.
+        if committed_ref is not None and committed_ref != ref:
+            tx.validation = {"verdict": "reject",
+                             "reason": (f"reference re-anchoring forbidden (doc 04 §5B): "
+                                        f"committed reference {committed_ref!r} != "
+                                        f"submitted {ref!r}")}
+            self._record(tx); return tx, state
+
+        # invariants 1 & 3, per channel.
+        violations = []
+        for c, v in channels.items():
+            submitted_r = v["reliability"]
+            if c == ref:
+                # the reference is a fixed sentinel, not a recomputed rate.
+                if submitted_r != REFERENCE_RELIABILITY:
+                    violations.append(f"{c}: reference reliability {submitted_r} "
+                                      f"!= {REFERENCE_RELIABILITY}")
+                continue
+            if submitted_r is None:
+                # unobserved channel carries no calibrated number: nothing to commit.
+                violations.append(f"{c}: reliability is None (unobserved) — not committable")
+                continue
+            # invariant 1: recompute from the recorded window.
+            recomputed = recompute_reliability(v["window"])
+            if abs(recomputed - submitted_r) > 1e-9:
+                violations.append(f"{c}: submitted {submitted_r} != recomputed "
+                                  f"{recomputed:.6f} from window")
+            # invariant 3: no calibrated channel outranks the reference.
+            if submitted_r > REFERENCE_RELIABILITY:
+                violations.append(f"{c}: reliability {submitted_r} outranks reference "
+                                  f"{REFERENCE_RELIABILITY}")
+
+        if violations:
+            tx.validation = {"verdict": "reject",
+                             "reason": "invariant re-check failed (doc 04 §5B)",
+                             "violations": violations}
+            self._record(tx); return tx, state
+
+        tx.validation = {"verdict": "commit",
+                         "invariant": {"windows_recompute": True,
+                                       "reference_unchanged": True,
+                                       "no_channel_outranks_reference": True},
+                         "reference_designated": committed_ref is None}
+
+        new_state = state.copy()
+        new_state.version = state.version + 1
+        new_state.parent_commitment = state.commitment
+        new_state.evaluation_history = {
+            "reference": ref,
+            "channels": {c: {"reliability": v["reliability"], "window": v["window"]}
+                         for c, v in channels.items()},
+            "recalibrated_tx": tx.tx_id,
+            "recalibrated_version": new_state.version,
+        }
         new_state.update_ref = tx.tx_id
         new_state.seal()
 
