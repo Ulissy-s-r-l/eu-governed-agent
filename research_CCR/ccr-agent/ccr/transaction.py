@@ -159,11 +159,12 @@ class LearningEngine:
     The ONLY writer of behavioral state (doc 00 §6.9)."""
 
     def __init__(self, ledger: ExperienceLedger, gate: Optional[AdmissionGate] = None,
-                 replay_tolerance: float = 0.05):
+                 replay_tolerance: float = 0.05, memory_store=None):
         self.ledger = ledger
         self.gate = gate or AdmissionGate()
         self.replay_tolerance = replay_tolerance
         self.transactions: list[TransactionRecord] = []
+        self.memory_store = memory_store        # optional GMPMemoryStore (doc 02 §3.1)
 
     # -- propose (doc 04 stage 4) -------------------------------------------
 
@@ -411,12 +412,14 @@ class LearningEngine:
             item = new_state.semantic_memory[cand.mem_id]
             item.last_confirmed_tx = tx.tx_id          # §2.1d: refresh the confidence clock
             item.confidence = max(item.confidence, cand.confidence)
+            committed_item = item
         else:
             mem_id = new_id("mem")
-            new_state.semantic_memory[mem_id] = MemoryItem(
+            committed_item = MemoryItem(
                 id=mem_id, type=cand.type, content=cand.content,
                 confidence=cand.confidence, sources=sources, status="active",
                 created_tx=tx.tx_id, last_confirmed_tx=tx.tx_id)
+            new_state.semantic_memory[mem_id] = committed_item
             tx.delta["mem_id"] = mem_id
         new_state.update_ref = tx.tx_id
         new_state.seal()
@@ -424,6 +427,11 @@ class LearningEngine:
         tx.status = "committed"
         tx.new_commitment = new_state.commitment
         self._record(tx)
+        # GMP persistence (doc 02 §3.1, §2.1c): a durable, queryable fact. supersedes
+        # -> the native GMP supersede op (ADR-0008), never a payload flag.
+        if self.memory_store is not None:
+            self.memory_store.on_commit(committed_item, tx, cand.op,
+                                        supersedes_mem_id=getattr(cand, "supersedes_mem_id", None))
         return tx, new_state
 
     # -- maintenance: evidence-free demotion (doc 04 §5A) ---------------------

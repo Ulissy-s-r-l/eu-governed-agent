@@ -93,7 +93,11 @@ engineering against the existing transaction machinery. Total estimate: **6–9 
 experiences by (region, tool) and emits `insert`/`confirm` memory candidates through the gate
 (`LearningEngine.commit_memory`); `sources` = the group's root exp_ids (I4), support counted via the
 single `ccr/support.py:root_support` (I6, doc 01 Def. 7.4a). `tests/test_consolidation.py`. (b)
-contradiction detection and (c) GMP-backed persistence remain.
+contradiction detection remains; **(c) GMP-backed persistence is BUILT (2026-09-07)** —
+`ccr/gmp_memory.py:GMPMemoryStore` is a commit observer on `LearningEngine` that persists a committed
+`MemoryItem` as a GMP fact (`ccr:mem/<type>` belief + `ccr:mem/sources` provenance companion);
+**`supersedes` maps to the NATIVE GMP `supersede` op (ADR-0008), not a payload flag**; `status` maps to
+the native lifecycle (superseded / `valid_until`). `tests/test_gmp_memory.py`.
 
 Four pieces of work, in order:
 

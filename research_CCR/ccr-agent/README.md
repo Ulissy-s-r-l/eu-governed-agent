@@ -65,10 +65,11 @@ tests/
 ├── test_approval.py    # cgr.cosign.v1 co-signed approval on the transaction
 ├── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
 ├── test_consolidation.py # consolidation (§2.1a/d) + I6 support independence
-└── test_calibration.py   # per-channel reliability vs a reference channel (doc 07 §2.2a)
+├── test_calibration.py   # per-channel reliability vs a reference channel (doc 07 §2.2a)
+└── test_gmp_memory.py    # GMP-backed memory persistence; native supersede (ADR-0008)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
-`consolidation.py`, `calibration.py`. Suite: **40 tests**.
+`consolidation.py`, `calibration.py`, `gmp_memory.py`. Suite: **42 tests**.
 
 ## Run
 
@@ -156,16 +157,20 @@ Every C-arm ledger verifies its hash chain end-to-end.
   (replay can't stop it), but it **does not drive behaviour**; a `maintenance` run then
   demotes the committed defect durably. Limitation plus stated control, not limitation
   alone.
-- **Channel poisoning is undefended: nothing verifies a channel's self-reported
-  confidence.** D1 defends *experience* poisoning only because the forged
-  experiences are routed through the `agent-self-report` evaluator, which caps
-  confidence at 0.3 **at capture**. The admission gate reads
-  `evaluation.confidence` directly and does **not** bind a `channel_id` to a
-  maximum trust. A forged evaluation block claiming `confidence=0.99` (any
-  channel label) therefore yields trust 0.99 → V≈0.695 ≥ 0.55 and **walks
-  through the gate**. Per-channel reliability tracking (doc 07 §2.2) is
-  **unimplemented**; until it exists, the poison defense is only as strong as the
-  honesty of the capture path's self-report cap.
+- **Channel poisoning: closed where a reference channel exists, open where none does**
+  *(compensating control added by item 5)*. The risk: a channel's *self-reported*
+  confidence is not evidence of reliability — a forged evaluation block claiming
+  `confidence=0.99` (any channel label) would yield trust 0.99 → V≈0.695 and walk the
+  0.55 gate. **Compensating control (item 5 — per-channel calibration, doc 07 §2.2a):**
+  where the deployment has a **designated reference channel** (a domain with delayed,
+  independent, outcome-grounded signals — tests, confirmed outcomes, a vetted oracle),
+  `CalibrationLoop` measures each channel's **observed** reliability against it and the
+  gate's trust term uses that over the self-report (tested: a forged 0.99 self-report is
+  trusted at its observed ~0.25). **Still open where no reference exists** — AML per
+  ADR-0009 has no correctness signal, so no channel can be established as a reference,
+  calibration degrades to consensus/imitation, and the account-vs-channel gap stays open
+  there. Same extrinsic-trust limit as identity assurance (ADR-0009 gap 3a). Closed with
+  a reference; open without one.
 
 ## What this still does not include
 
