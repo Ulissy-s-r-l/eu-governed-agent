@@ -24,7 +24,7 @@ The Learning Transaction is a first-class record, the `tx:` object that other do
 ```json
 {
   "tx_id":        "tx:sha256:…",
-  "type":         "learn | revert | merge | recalibrate | maintenance",  // maintenance: §5A
+  "type":         "learn | revert | merge | recalibrate | maintenance",  // recalibrate: §5B · maintenance: §5A
   "parent_state": "cso:sha256:…",
   "candidate_state": "cso:sha256:…",
 
@@ -244,8 +244,9 @@ path **self-declaring** in the record's `type` — a reader sees `maintenance` a
 validation applied, with no per-record ambiguity. This is the same reasoning that keeps `revert` a
 distinct type rather than a "commit without replay" flag.
 
-**`recalibrate` is a different mechanism.** `recalibrate` adjusts evaluator/channel reliability (the
-calibration loop, build-guide §2.2); it does **not** demote confidence-floored beliefs. Do not overload it.
+**`recalibrate` is a different mechanism (now defined in §5B).** `recalibrate` adjusts evaluator/channel
+reliability (the calibration loop, build-guide §2.2); it does **not** demote confidence-floored beliefs.
+Its bypass reason is **circularity** (self-certification), not §5A's "not learning-value evidence" — see §5B.
 
 **Scope note (what has something to act on today).** Of the per-target demotions above, **only
 `policy_table` exists in the current `CognitiveState`** — so the first implementation's sole live target
@@ -253,6 +254,53 @@ is **policy → revert to uniform**. `semantic_memory` / `procedural_skills` / `
 **specified here and has nothing to act on yet** (those components are unbuilt in the code; build-guide
 §2.1/§2.3/§2.5 add them). The `maintenance` type is specified for all four now so the later components
 inherit it rather than re-deriving it.
+
+---
+
+## 5B. Recalibrate: committing per-channel reliability
+
+*(Added 2026-09-07 — finishes build-guide item 5. Calibration (`ccr/calibration.py`, doc 02 §3.8, doc 07
+§2.2a) computes per-channel reliability, but a computation over the ledger is not state: it is not
+versioned, not attributable to a transaction, and not revertable. Per doc 02 §251/§265 only `tx:` objects
+change the CSO, so writing `evaluation_history` requires a transaction.)*
+
+**`type: recalibrate`** commits an updated `evaluation_history` (per-channel `{reliability, verdicts}`,
+doc 02 §3.8). Like `maintenance` (§5A) it is **evidence-free in the gate's sense** and **admission-bypassing**
+— but **its bypass reason is its own, and must not be read as inheriting §5A's.**
+
+**Why it bypasses admission — circularity, not "not learning-value evidence" (§5A's reason).** The
+admission gate's trust term **consumes** calibration output (doc 07 §2.2a: `reliability_of` feeds trust).
+Routing a recalibration *through* that gate would be **self-certification** — the loop grading its own
+new reliabilities with a gate whose scoring those very numbers determine. §5A bypasses because a decay
+computation is not learning-value evidence at all; §5B bypasses because submitting calibration to the
+gate is **circular**. Same mechanism (evidence-free, invariant-validated, distinct type), a **different**
+justification; §5B states its own.
+
+**Validation — invariant re-check against the recorded observation window (no admission, no replay):**
+- the submitted reliabilities MUST **recompute** from the recorded observation window (the window's
+  verdict tallies are the transaction's provenance — what was measured — exactly as §5A records the decay
+  computation); a submitted value that does not recompute from the window is rejected;
+- the **reference channel is designated and unchanged** across the transaction (a recalibrate may not
+  swap the reference — that would re-anchor trust silently);
+- **no calibrated channel outranks the reference** (doc 07 §2.2a: the reference is authoritative by
+  construction; a derived channel cannot be assigned reliability above it).
+
+**Trigger, recovery, provenance.** Invoked **explicitly** (operator or scheduled job), never automatically
+— an administrative act, like §5A and like a key rotation. **Forward-only and revertable** by an ordinary
+`revert` (§5) if a recalibration was wrong (e.g. a mis-specified window). **Ledger-recorded with the
+observation window as its justification**, so the reliabilities are re-checkable from the record.
+
+**Committed-state rule (normative).** The gate's trust term reads reliability from **committed state
+only** — `evaluation_history` as of the current committed CSO. A live `CalibrationLoop` **advises**; its
+numbers become **behavioural exclusively through a committed `recalibrate` transaction**. An uncommitted
+loop steering the gate is **an account of reliability, not a belief about it** — it would reintroduce, at
+the meta-level, the very "trust the account" failure calibration exists to close. Implementations MUST
+NOT let `reliability_of` read a live loop; it reads committed `evaluation_history`.
+
+**`recalibrate` vs the enum note (§ Transaction Record).** doc 04's tx-type enum already lists
+`recalibrate` with the caution "adjusts evaluator/channel reliability … do not overload it." §5B is that
+type's definition; the caution stands — `recalibrate` carries reliability updates and nothing else
+(it is not a back door for evidence-free policy or memory changes; those are `maintenance`/`learn`).
 
 ---
 
