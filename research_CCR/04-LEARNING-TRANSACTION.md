@@ -207,6 +207,32 @@ says is no longer earned); authorization is checked against the current scope, a
 edit), recorded in the ledger with its reason, and **revertable** by an ordinary `revert` (§5) if the
 demotion was wrong — e.g. a decay-rate misconfiguration. History is never rewritten.
 
+**Trigger — explicit invocation only.** A maintenance transaction is invoked **explicitly**, by an
+operator or a scheduled administrative job. It is **not** emitted automatically at commit time or at read
+time. The reasoning is that a maintenance transaction is an **administrative act, like a key rotation** —
+making it automatic hides it, and *a state change nobody chose is a state change nobody reviews.*
+Concretely, the two automatic alternatives are both rejected: **commit-time sweeping** would demote as a
+side effect of unrelated activity (a commit in one region silently deprecating a belief in another);
+**read-time demotion** would mutate state from a read path, contradicting §3.6's rule that the stored
+object is immutable and decay is a read-time computation. So demotion is a deliberate, scheduled/operator
+act whose invocation is itself a matter of record.
+
+**Consequence — I3 is eventually consistent, not invariant.** Because demotion is explicit, invariant
+**I3** ("commit floor respected for `status: active`") holds **eventually, not continuously.** Between the
+moment an entry decays below floor and the next maintenance run, a **below-floor entry remains `active`
+in state.** What covers the gap, and what does not, stated plainly:
+
+- **Covered — behaviour.** The **read-time floor** (doc 02 §3.6, enforced in `select_tool`) means a
+  below-floor entry **does not drive behaviour** in that window. So the exposure is a **stale state
+  record, not unsafe behaviour.**
+- **Not covered — direct state readers.** Any consumer that reads committed state **directly, without
+  applying read-time decay**, would see an entry the floor would have rejected — an active policy whose
+  usable confidence is already below `floor_commit`. **That is the residual risk of eventual consistency,
+  and it is recorded here rather than left to be rediscovered:** a correct consumer of committed CSO state
+  MUST apply read-time decay (`confidence_of`) before treating an `active` entry as usable; a consumer
+  that trusts the stored `confidence`/`status` alone will over-trust a decayed belief until the next
+  maintenance run reconciles it.
+
 **Why a distinct type and not a bypass flag on `learn`.** The admission gate's contract is that **it
 scores evidence** — every `learn` transaction's admission block is an auditable record of *what evidence
 justified the change*. A `skip_admission: true` flag on `learn` would break that contract silently: every
