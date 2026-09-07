@@ -47,11 +47,17 @@ class Consolidator:
         self.min_conf = min_conf
         # A group with >= min_support but mean score <= max_unreliable emits a
         # NEGATIVE claim. The dead band (max_unreliable, min_conf) emits neither,
-        # so a marginal tool does not flip-flop between senses. The negative claim
-        # is what gives contradiction detection (doc 02 §3.1) a live production
-        # trigger: two passes over shifting evidence can produce an active
-        # reliable + active unreliable claim for one (region, tool) with no
-        # supersedes between them — a genuine contested pair.
+        # so a marginal tool does not flip-flop between senses.
+        #
+        # WHY THIS EXISTS (say it plainly): the two positive/negative claims are
+        # the ONLY way any two facts this Consolidator emits can contradict. On
+        # their own the positive claims never contradict — a region can have
+        # several reliable tools. So the negative claim exists to make
+        # contradiction detection (doc 02 §3.1, ccr/contradiction.py) REACHABLE;
+        # it is not evidence the system observed a contradiction in the wild. The
+        # detection MACHINERY, however, is real and load-bearing for the first
+        # contested pair from a non-manufactured source. See the contradiction.py
+        # module docstring for both halves.
         self.max_unreliable = max_unreliable
 
     def _groups(self, region: str) -> dict[str, list[Experience]]:

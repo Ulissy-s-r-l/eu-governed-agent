@@ -473,7 +473,15 @@ class LearningEngine:
         # -> the native GMP supersede op (ADR-0008), never a payload flag.
         if self.memory_store is not None:
             self.memory_store.on_commit(committed_item, tx, cand.op,
-                                        supersedes_mem_id=getattr(cand, "supersedes_mem_id", None))
+                                        supersedes_mem_id=supersedes_mem_id)
+            # Propagate the contested transitions to GMP so the durable tier does
+            # not serve a belief the in-state runtime has quarantined (doc 02 §3.1).
+            # marked/restored are the exact deltas detect/reconcile just produced.
+            for a, b in marked:
+                self.memory_store.mark_contested(a, b, tx)
+                self.memory_store.mark_contested(b, a, tx)
+            for mid in restored:
+                self.memory_store.clear_contested(mid, tx)
         return tx, new_state
 
     # -- maintenance: evidence-free demotion (doc 04 §5A) ---------------------
