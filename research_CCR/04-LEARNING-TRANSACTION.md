@@ -46,7 +46,7 @@ The Learning Transaction is a first-class record, the `tx:` object that other do
     "invariant_check": {"passed": true, "violations": []},
     "replay":          {"suite": "…", "contexts": 127, "regressions": 0, "improvements": 3},
     "regression_battery": {"suite": "critical-behaviors-v3", "passed": 18, "failed": 0},
-    "human_approval":  {"approver": "…", "decision": "approve", "rationale": "…", "timestamp": "…"},
+    "human_approval":  {"approver": "…", "decision": "approve", "rationale": "…", "timestamp": "…"},  // SUPERSEDED — unsigned data; see note below
     "overall":         {"verdict": "commit | reject | escalate", "confidence": 0.92}
   },
 
@@ -57,9 +57,36 @@ The Learning Transaction is a first-class record, the `tx:` object that other do
 
   "status":   "proposed | testing | validated | committed | rejected | failed",
   "timeline": {"proposed_at": "…", "validated_at": "…", "committed_at": "…"},
-  "signature": "sig:gns:…"
+  "signature": "sig:gns:…"  // SUPERSEDED as the SOLE signature — see note below
 }
 ```
+
+> **Superseded (2026-09-07) — the approval envelope is now `cgr.cosign.v1`.** As drawn above,
+> `validation.human_approval` is **unsigned data** and `signature` is the **single, system** signature.
+> That is exactly the two-actor gap recorded in `GNS-Foundation/grafomem` decision **0009** (accepted
+> 2026-09-06) and resolved by **`cgr.cosign.v1`** (`grafomem/docs/cgr/cgr-cosign-v1-spec.md`): a general
+> two-party co-signature envelope. A learning transaction is its **approval-free** case (it approves a
+> policy update while the justifying experiences stay raw), under the profile **`cgr.learning-tx.v1`**.
+> Concretely, superseding the two fields above:
+>
+> - `validation.human_approval` becomes an **approval assertion** `{content_digest, approver_id,
+>   approver_key_id, approver_act, decision_date, record_nonce, [agent_draft_digest]}` **plus an
+>   inner approver signature** over `grafomem.hitl.approval.v1: ‖ JCS(assertion)`, produced with the
+>   approver's **self-custodied** key. `content_digest` is `BLAKE2b-256(JCS(content_body))` over the
+>   candidate delta + `motivation.admission` + the validation evidence + rationale.
+> - `signature` (the single `sig:gns:…`) becomes the **outer `system_signature`**, computed **last** over
+>   the whole record **including** the approver signature (nested, not parallel — §2.3 of the cosign spec).
+> - Required-ness is the §5.1 predicate `required_when {field: "risk", op: "eq", value: "high"}`: a
+>   **high-risk transaction lacking a valid approver signature is REJECTED at validation.** (This is
+>   `HighRiskUpdate ⇒ RequiredApproval`, now *enforced* rather than asserted — the property in doc 07 §7.)
+> - **Honest limits** (cosign register): stripping the approval yields an *invalid* transaction; an
+>   approval-less high-risk transaction is *non-conformant*; a compromised system key can still mint a
+>   fresh approval-less transaction — *detectable* against externally-held commitments, not preventable.
+>   **Not resolved:** whether the approver key is a *verified named person* (0009 gap 3a).
+>
+> Implemented in `ccr-agent/ccr/cosign.py` + `LearningEngine.commit`; acceptance in
+> `tests/test_approval.py`. The schema above is retained for continuity; treat the two flagged fields as
+> the cosign envelope, not as unsigned metadata.
 
 Three fields carry the protocol's core semantics. **`motivation.admission`** records the full admission computation, not just the verdict: the gate's component scores and the threshold in force. This is the audit trail for the admission function itself — if the gate is later found to be miscalibrated, its history of decisions (stored in the ledger as `gate_decision` records, document 03 §3.2) can be replayed under corrected thresholds. **`validation`** is the evidence bundle: each stage's inputs, outputs, and verdicts, stored so that a commit can be re-verified years later without re-running anything. **`status` and `timeline`** implement the lifecycle state machine (§3), with the invariant that `committed` implies `validated` and `validated` implies non-empty `validation` — a state-transition precondition the protocol enforces mechanically.
 
