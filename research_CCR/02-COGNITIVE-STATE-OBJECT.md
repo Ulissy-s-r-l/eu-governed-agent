@@ -2,7 +2,7 @@
 
 **Continuous Cognitive Runtime (CCR) — Document 2 of the CCR specification series**
 **Status:** Working draft v0.1 — personal working document, intended for later refinement toward an arXiv publication
-**Depends on:** `00-CCR-SYSTEM-OVERVIEW.md` (architecture), `01-CCR-FORMAL-MODEL.md` (Definitions 2.1, 4.1, 7.1, 7.3; invariants I1–I5)
+**Depends on:** `00-CCR-SYSTEM-OVERVIEW.md` (architecture), `01-CCR-FORMAL-MODEL.md` (Definitions 2.1, 4.1, 7.1, 7.3, 7.4a; invariants I1–I5, and I6 support-independence)
 **Feeds:** `03-EXPERIENCE-LEDGER.md`, `04-LEARNING-TRANSACTION.md`, `06-CCR-BENCHMARK.md`
 
 ---
@@ -86,7 +86,7 @@ Semantic memory stores decontextualized knowledge: facts, concepts, domain relat
 }
 ```
 
-Two fields distinguish this from a conventional vector-store entry. `sources` is mandatory and non-empty for learned items: a semantic memory that cannot name the experiences it came from violates I4 and cannot be committed. `supersedes` implements belief revision as *graph extension rather than mutation* — a corrected fact does not overwrite its predecessor but points at it, preserving the full history of what the agent believed, which is exactly what rollback (Definition 8.4) and drift measurement (§12 of document 01) require. Items of `type: consolidation` are the schema's answer to ledger growth: they summarize a set of raw experiences (named in `sources`) into reusable knowledge, in the spirit of the trajectory-to-event consolidation that LongMemEval-V2 showed to outperform raw-slice retrieval ([LongMemEval-V2](https://arxiv.org/html/2605.12493v1)), while the raw experiences remain addressable in the ledger.
+Two fields distinguish this from a conventional vector-store entry. `sources` is mandatory and non-empty for learned items: a semantic memory that cannot name the experiences it came from violates I4 and cannot be committed. `sources` is also what makes **support independence (I6, doc 01 Def. 7.4a)** enforceable: because a consolidation names its root experiences, a later consumer can dedupe — a fact consolidated from a policy's own evidence contributes **no independent support** to that policy beyond the shared `sources`; support is counted over the union of root `exp_id`s, never summed across the policy and the fact. `supersedes` implements belief revision as *graph extension rather than mutation* — a corrected fact does not overwrite its predecessor but points at it, preserving the full history of what the agent believed, which is exactly what rollback (Definition 8.4) and drift measurement (§12 of document 01) require. Items of `type: consolidation` are the schema's answer to ledger growth: they summarize a set of raw experiences (named in `sources`) into reusable knowledge, in the spirit of the trajectory-to-event consolidation that LongMemEval-V2 showed to outperform raw-slice retrieval ([LongMemEval-V2](https://arxiv.org/html/2605.12493v1)), while the raw experiences remain addressable in the ledger.
 
 ### 3.2 episodic_index
 
