@@ -95,11 +95,57 @@ The roadmap's seven threat classes are mapped to attack surface paths and OWASP 
 
 **CCR defense:**
 - **Plural evaluation channels (L1):** the evaluator uses multiple channels (deterministic tests, external feedback, model-based critics, human review) with per-channel reliability tracking (document 02, §3.8). A single compromised channel has bounded influence.
-- **Evaluator calibration (L2):** channel reliability is versioned state; a channel whose verdicts are later found incorrect is down-weighted.
+- **Evaluator calibration (L2):** channel reliability is versioned state; a channel whose verdicts are later found incorrect is down-weighted — **against a designated reference channel (§2.2a).**
 - **Confidence-carrying verdicts (L3):** evaluations emit confidence, and the admission function requires high confidence for high-risk updates.
 - **Human-in-the-loop for high-risk (L4):** the validation predicate requires human approval for high-risk policy changes (document 01, §7.5).
 
 **Residual risk:** coordinated multi-channel compromise is possible but expensive; the calibration loop provides detection over time.
+
+### 2.2a Calibration's reference requirement — the trust root it relocates, not removes
+
+*(Added 2026-09-07. This operationalizes what §2.2 above and doc 02 §3.8 leave open: down-weighting "a
+channel whose verdicts are later found incorrect" presupposes something to find them incorrect
+**against** — and neither section names it.)*
+
+**Reliability is measured against a designated reference channel, trusted for reasons extrinsic to the
+system.** A channel's reliability is its agreement rate with a *more-trustworthy* signal; if every
+channel's reliability is unestablished, calibrating channel A against channel B needs B's reliability,
+which needs A's or C's — circular. The only non-circular floor is a **reference channel** whose
+authority comes from **outside** the calibration loop: deterministic tests whose correctness is
+definitional, delayed **confirmed real-world outcomes**, or a human oracle taken as authoritative. In the
+simulator, `SimulatorGroundTruthEvaluator` **is** that reference by construction.
+
+**Calibration relocates the trust root; it does not remove it.** Its value is exactly this relocation:
+from "trust every channel's self-report" (**N** unaudited anchors — the "trust the account" failure of
+the standing rule) to "trust **one** designated reference's authority" (one auditable anchor). That is
+real progress, and it is also the limit — **the anchor does not disappear.** At the bottom, something is
+trusted for reasons the system cannot itself verify.
+
+**Without a reference, calibration degrades to consensus — imitation, not correctness.** With no
+extrinsic reference, "found incorrect" can only mean "disagrees with the other channels," so the loop
+converges on **inter-channel agreement**, which rewards a channel for matching the majority account
+rather than for being right. That is the **AML proxy-label circularity** recorded in
+`Ulissy-s-r-l/eu-governed-agent` **ADR-0009**: models trained on analyst dispositions learn to *agree
+with the analyst*, because no ground truth for laundering is fed back.
+
+**Criterion, and where it fails.** A reference channel exists **iff the domain produces delayed,
+independent, outcome-grounded signals** — confirmed test results, settled receivables, adjudicated
+outcomes. **Therefore per-channel calibration is _unbuildable_ where no such signal exists.** The
+concrete case is **AML (ADR-0009): no correctness signal arrives**, so no channel can be established as a
+reference, the disposition channel's reliability is unestablishable, and the "trust the channel, not the
+account" gap **stays open there** — the gate remains stuck trusting the account, because nothing can
+contradict it.
+
+**One limit, multiple layers — not three coincidences.** This is the **same structure** as **ADR-0009
+gap 3a**: an approver key is bound to a *named person* only by an **external authority** (a QTSP, a
+bank's IAM) the system cannot itself verify. Calibration's reference channel and gap 3a's external
+identity authority are the same move — pushing the trust root to a point outside the system's own
+machinery — and the "trust the channel, not the account" standing rule is the general statement of it.
+Where the domain supplies an extrinsic anchor (tests, confirmed outcomes, a vetted authority), the move
+succeeds; where it does not (AML correctness, self-asserted identity), the anchor is absent and the gap
+is a **stated limit of the domain**, not an unbuilt feature. This is L4's open research question (doc 00
+§5.4) made precise: *which feedback is trustworthy* is answerable only relative to a reference the system
+must be given.
 
 ### 2.3 Memory poisoning
 
