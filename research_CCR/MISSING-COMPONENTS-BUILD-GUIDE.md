@@ -609,7 +609,7 @@ attack traces for all eleven.
 | 12 | Causal graph: counterfactuals | 3.2 | 11 |
 | 13 | State DAG: parents format + store | 4 | — |
 | 14 | State DAG: merge + validation | 4 | 13 |
-| 15 | Hypothesis property tests (stage 1) | 6 | — |
+| 15 | Hypothesis property tests (stage 1) — ✅ **BUILT** (`tests/test_properties.py`) | 6 | — |
 | 16 | **Phase 7A — port existing authority machinery** | **§5 / C** | 13 |
 | 17 | Phase 7B — GNS identity layer | 5 | 16, 0005, 0008, 0009 gap 3a |
 | 18 | ProVerif model (stage 2) | 6 | 15, 16 |
