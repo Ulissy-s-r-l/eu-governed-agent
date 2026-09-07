@@ -88,8 +88,12 @@ engineering against the existing transaction machinery. Total estimate: **6–9 
 
 ### 2.1 Semantic memory: from storage to memory
 
-**Spec:** doc 02 §3.2, doc 00 §6.4. **Status:** `MemoryItem` supports insert and
-supersession; that is all.
+**Spec:** doc 02 **§3.1** (`semantic_memory`; §3.2 is `episodic_index`), doc 00 §6.4. **Status:
+(a) consolidation + (d) re-confirmation BUILT (2026-09-07)** — `ccr/consolidation.py` groups evaluated
+experiences by (region, tool) and emits `insert`/`confirm` memory candidates through the gate
+(`LearningEngine.commit_memory`); `sources` = the group's root exp_ids (I4), support counted via the
+single `ccr/support.py:root_support` (I6, doc 01 Def. 7.4a). `tests/test_consolidation.py`. (b)
+contradiction detection and (c) GMP-backed persistence remain.
 
 Four pieces of work, in order:
 
@@ -155,8 +159,16 @@ and resets the confidence clock (this is what stops good facts from decaying, se
 
 ### 2.2 Evaluation history and the calibration loop (the L4 seed)
 
-**Spec:** doc 00 §5.4 (L4 meta-learning), doc 02 §3.8, doc 06 negative control.
-**Status:** `evaluation_history` is declared and *never written*. This is the highest-
+**Spec:** doc 00 §5.4 (L4 meta-learning), doc 02 §3.8, doc 07 §2.2a (reference requirement), doc 06
+negative control. **Status: BUILT (2026-09-07)** — `ccr/calibration.py:CalibrationLoop` tracks per-channel
+`{reliability, verdicts}` against a **designated reference channel** (Beta posterior mean); the gate's
+trust term consumes observed reliability over self-reported confidence (`AdmissionGate.evaluate_evidence(
+reliability_of=…)`). **Its non-applicability to reference-less domains (AML per ADR-0009) is stated in the
+module docstring**, and `CalibrationLoop` refuses to instantiate without a reference. Permanent negative
+control (`tests/test_calibration.py`): a garbage/self-consensus channel never recovers reliability. Writing
+`evaluation_history` back through a `recalibrate` transaction remains.
+The paragraph below is the original design note.
+**Status (historical):** `evaluation_history` is declared and *never written*. This is the highest-
 leverage Tier-2 item because it is the seed of meta-learning: the system learning
 *which feedback to trust*.
 

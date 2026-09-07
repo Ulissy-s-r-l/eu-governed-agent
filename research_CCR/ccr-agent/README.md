@@ -63,9 +63,12 @@ tests/
 ├── test_phase1.py      # Schema, chain integrity, Merkle proofs, GMP bridge, tamper tests
 ├── test_phase34.py     # Gate, held-out replay, commit, revert, read path
 ├── test_approval.py    # cgr.cosign.v1 co-signed approval on the transaction
-└── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
+├── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
+├── test_consolidation.py # consolidation (§2.1a/d) + I6 support independence
+└── test_calibration.py   # per-channel reliability vs a reference channel (doc 07 §2.2a)
 ```
-Also in `ccr/`: `cosign.py` (the co-signature envelope). Suite: **30 tests**.
+Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
+`consolidation.py`, `calibration.py`. Suite: **40 tests**.
 
 ## Run
 

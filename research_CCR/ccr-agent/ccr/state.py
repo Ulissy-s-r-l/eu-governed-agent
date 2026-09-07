@@ -65,6 +65,21 @@ def is_uniform(distribution: dict[str, float], tol: float = 1e-9) -> bool:
 
 
 @dataclass
+class MemoryItem:
+    """A semantic_memory item (doc 02 §3.1). `sources` is mandatory, non-empty,
+    and is what makes I6 (support independence) enforceable — a consolidation
+    names the root experiences it came from."""
+    id: str
+    type: str                               # fact | concept | relation | consolidation
+    content: str
+    confidence: float
+    sources: list[str]                      # root exp_ids (I4/I6)
+    status: str = "active"                  # active | deprecated
+    created_tx: str = ""
+    last_confirmed_tx: str = ""
+
+
+@dataclass
 class CognitiveState:
     version: int
     policies: dict[str, PolicyEntry]
@@ -73,6 +88,9 @@ class CognitiveState:
     update_ref: Optional[str] = None        # tx_id that produced this state
     confidence_policy: dict = field(         # doc 02 §3.6; versioned state
         default_factory=lambda: dict(DEFAULT_CONFIDENCE_POLICY))
+    semantic_memory: dict = field(default_factory=dict)   # id -> MemoryItem (doc 02 §3.1)
+    evaluation_history: dict = field(         # doc 02 §3.8: channel_id -> {reliability, verdicts}
+        default_factory=dict)
 
     def body(self) -> dict:
         d = asdict(self)
