@@ -24,7 +24,7 @@ The Learning Transaction is a first-class record, the `tx:` object that other do
 ```json
 {
   "tx_id":        "tx:sha256:…",
-  "type":         "learn | revert | merge | recalibrate",
+  "type":         "learn | revert | merge | recalibrate | maintenance",  // maintenance: §5A
   "parent_state": "cso:sha256:…",
   "candidate_state": "cso:sha256:…",
 
@@ -176,6 +176,57 @@ Rollback is not a transaction state but a *new transaction type*: `type: revert`
 The revert transaction's validation is deliberately lighter than a learning transaction's: the invariant check runs (the restored content must be well-formed), replay is skipped (the ancestor state is already validated), and authorization is checked against the *current* scope (the agent must still hold authority to act under the restored state). This asymmetry is justified: revert is a *recovery* operation, not a *learning* one, and its risk profile is different — the failure mode is not "bad new behavior" but "stale restored behavior," which is why the revert transaction records the incident evidence in its justification field, so the rollback itself is explainable.
 
 For the case where a harmful update is discovered *after* subsequent benign updates have been committed on top of it, the protocol supports **selective revert**: the revert transaction targets the ancestor *before* the harmful update, and the benign updates are re-applied as new learning transactions (with their original justification and validation records cited as precedent). This is the saga compensation pattern in reverse: instead of compensating a failed step, the system compensates a *discovered-harmful* step by replaying the good steps that followed it. The process is auditable end-to-end: the revert transaction cites the harmful transaction, the re-application transactions cite the revert, and the full recovery is a connected subgraph of the DAG.
+
+---
+
+## 5A. Maintenance: evidence-free demotion (confidence-floor enforcement)
+
+*(Added 2026-09-07 — the spec catching up to build-guide item 1 / §2.4. Confidence decays at read time
+(doc 02 §3.6); when an entry falls below `floor_commit`, invariant **I3** ("commit floor respected for
+`status: active`") requires it to be **demoted**. Demotion is a state change, so — per doc 02 §251/§265,
+only `tx:` objects change the CSO — it must be a transaction. But a decay-driven demotion has **no
+justifying experiences**, so it cannot go through the admission gate. Hence a distinct type.)*
+
+**`type: maintenance`** is a **new transaction type**, modeled on `revert` (§5): a state change with a
+**deliberately lighter, evidence-free validation**. Its payload demotes one or more below-floor entries
+per the doc 02 per-target rule — **`policy_table` → revert to the default (`uniform`); `semantic_memory`
+/ `procedural_skills` → status flip `active → deprecated` (retained, not retrievable); `preferences` →
+drop the key.**
+
+**Validation (evidence-free, invariant-based — no admission).** A maintenance transaction does **not**
+call the admission gate (there is nothing to score). Its validation is a single **invariant check that
+the target is genuinely below floor at the current state version**, evaluated against the **recorded
+decay computation** — `entry.confidence`, `updated_tx` (→ version-age against `decay_clock: "commits"`),
+`decay_rate`, and `floor_commit` — all of which are already in state and deterministic. The justification
+field records that computation (the values and the derived below-floor result), so the demotion is
+**explainable and re-checkable** exactly the way `revert` records its `incident_evidence`. Replay is
+skipped (demotion cannot regress a historically-successful context — it *removes* a belief the floor
+says is no longer earned); authorization is checked against the current scope, as for `revert`.
+
+**Forward-only and revertable.** Like every state change, a maintenance transaction is appended (never an
+edit), recorded in the ledger with its reason, and **revertable** by an ordinary `revert` (§5) if the
+demotion was wrong — e.g. a decay-rate misconfiguration. History is never rewritten.
+
+**Why a distinct type and not a bypass flag on `learn`.** The admission gate's contract is that **it
+scores evidence** — every `learn` transaction's admission block is an auditable record of *what evidence
+justified the change*. A `skip_admission: true` flag on `learn` would break that contract silently: every
+future reader of a `learn` record would have to ask *"was this one actually gated, or did it carry the
+flag?"* — the gate's guarantee degrades from "always scored" to "scored unless told otherwise," and the
+audit surface grows a hole exactly where trust is asserted. A **distinct `maintenance` type keeps the
+`learn` contract absolute** (a `learn` transaction was *always* evidence-gated) and makes the evidence-free
+path **self-declaring** in the record's `type` — a reader sees `maintenance` and knows precisely which
+validation applied, with no per-record ambiguity. This is the same reasoning that keeps `revert` a
+distinct type rather than a "commit without replay" flag.
+
+**`recalibrate` is a different mechanism.** `recalibrate` adjusts evaluator/channel reliability (the
+calibration loop, build-guide §2.2); it does **not** demote confidence-floored beliefs. Do not overload it.
+
+**Scope note (what has something to act on today).** Of the per-target demotions above, **only
+`policy_table` exists in the current `CognitiveState`** — so the first implementation's sole live target
+is **policy → revert to uniform**. `semantic_memory` / `procedural_skills` / `preferences` demotion is
+**specified here and has nothing to act on yet** (those components are unbuilt in the code; build-guide
+§2.1/§2.3/§2.5 add them). The `maintenance` type is specified for all four now so the later components
+inherit it rather than re-deriving it.
 
 ---
 

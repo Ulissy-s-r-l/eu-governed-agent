@@ -207,19 +207,43 @@ policy equals the strategy; a strategy proposed from 2 regions (< k) is rejected
 
 ### 2.4 Confidence-floor enforcement
 
-**Spec:** doc 02 §3.6. **Status:** `confidence_of()` computes read-time decay
-(`v·(1 − rate·age)`) but nothing *acts* on the floor. A policy entry can decay to 0.1
-and still drive `select_tool` — that violates the doc-02 contract that confidence is
-behavioral, not decorative.
+**Spec:** doc 02 §3.6, doc 04 **§5A** (the `maintenance` tx type). **Status (corrected 2026-09-07 —
+see the note below):** the confidence machinery is **unbuilt**. `PolicyEntry` carries a bare
+`confidence` float; there is **no `confidence_of`, no `confidence_map`, no `decay_rate`/`decay_clock`,
+no `floor_commit`, and no `status` field** in `state.py`. So decay is **neither computed nor enforced** —
+a policy entry drives `select_tool` regardless of confidence, which violates the doc-02 contract that
+confidence is behavioral, not decorative. Item 1 is therefore *build §3.6, then enforce it*, not *add a
+sweep to existing decay*.
 
-Add a cold-path sweep: `LearningEngine.maintenance(state)` scans `confidence_map`,
-and any item below `floor_commit` gets a `CandidateUpdate(op="deprecate", ...)` —
-policy rows revert to uniform, memory items go `status="deprecated"`, preferences are
-dropped. Deprecation is a commit (signed, revertable), not a silent cleanup. Note the
-interaction with 2.1(d): re-confirmation is what keeps *live* beliefs above the floor,
-so decay + re-confirmation together implement "beliefs fade unless re-earned" end to
-end. **Acceptance:** commit a preference at confidence 0.56, advance 100 versions,
-run maintenance → preference deprecated, tx in ledger, revert restores it. ~1 day.
+> **Correction (2026-09-07), recorded visibly.** An earlier draft of this section claimed
+> *"`confidence_of()` computes read-time decay but nothing acts on the floor."* Checked against
+> `state.py`: **`confidence_of` does not exist and decay is not computed at all.** This is the **fourth**
+> instance this week of a summary that did not survive checking — after 0008 (two→three actors), 0009
+> gap 3 (server-only reading, twice), the AMLR Art. 18 citation, and the cosign 7A guard names. The
+> pattern is the record's actual subject, not an aside: **a stated summary trusted over the source it
+> summarizes.** It is the same shape as the standing rule ("trust the channel, not the account"),
+> applied to our own documents — which is why it belongs in the record rather than being quietly fixed.
+
+Two enforcement points, both required by the spec:
+
+1. **Read-time floor (behavioral, doc 02 §3.6 — decay is a read-time computation over an immutable
+   store).** Build the confidence policy `{floor_commit, decay_rate, decay_clock: "commits"}` and a
+   read-time `confidence_of(entry, current_version)`; **`select_tool` MUST NOT act on a below-floor
+   entry — it falls back to uniform.** This closes the "decorative confidence" gap immediately, without
+   mutation, without waiting for a sweep.
+2. **Durable demotion (commit-time, doc 04 §5A).** `LearningEngine.maintenance(state)` scans for
+   below-floor entries and emits **`type: maintenance` transactions** (evidence-free, invariant-validated
+   against the recorded decay computation — **not** a `learn`/admission path, which would reject for "no
+   evidence"). Per-target: **`policy_table` → revert to uniform**; memory/skills → `status="deprecated"`;
+   preferences → dropped. Recorded in the ledger with its reason; revertable. Note the interaction with
+   2.1(d): re-confirmation keeps *live* beliefs above the floor, so decay + re-confirmation implement
+   "beliefs fade unless re-earned" end to end.
+
+**Only `policy_table` exists in the code today**, so the first implementation's sole live target is
+**policy → revert to uniform**; memory/preference demotion is defined (here and doc 04 §5A) and has
+nothing to act on yet. **Acceptance:** a policy at low confidence, advance N versions past the floor →
+`select_tool` returns uniform (read-time); `maintenance()` emits a `maintenance` tx that demotes it, tx
+in the ledger with its reason, and `revert` restores it. *(relative sizing: small)*
 
 ### 2.5 Co-signed approval on the learning transaction
 
