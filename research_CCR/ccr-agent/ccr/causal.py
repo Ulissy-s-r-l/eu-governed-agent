@@ -155,13 +155,15 @@ def why_believed(causal_graph: dict, outcome_exp_id: str) -> list[dict]:
 
 
 # ==========================================================================
-# COUNTERFACTUALS — item 12, PR-A (mitigation only; NO admission change).
-# The gate does not read any of this yet; it is the machinery PR-B will wire.
+# COUNTERFACTUALS — item 12. PR-A: replay + propagation (no admission change).
+# PR-B: admission_uplift (below) is read by the engine and fed to the gate.
 # ==========================================================================
 
 REPLAY_EPISODE_OFFSET = 900_000            # deterministic sample range, disjoint from training
 REPLAY_TAU = 0.5                            # anomaly-recurrence threshold: the cause must
 #                                            reproduce the claimed verdict more often than not
+CAUSAL_GAMMA = 0.1                          # sizes TYPICAL per-chain influence; NOT the safety
+#                                            bound — the gate's aggregate cap is (rider 1)
 
 
 def scope_for_edge(edge: dict) -> list[str]:
@@ -246,3 +248,35 @@ def deprecate_failed_edges(state, ledger, simulator, *,
             edge["status"] = "deprecated"
             deprecated.append(edge["edge_id"])
     return deprecated
+
+
+def admission_uplift(causal_graph: dict, evidence, replayer, *,
+                     w_trust: float, gamma: float = CAUSAL_GAMMA,
+                     samples: int = 25, tau: float = REPLAY_TAU) -> float:
+    """PR-B: the RAW causal corroboration for a candidate whose cited `evidence` is
+    grounded by prior causal edges. Returned UNCAPPED — the gate applies the aggregate
+    safety cap (rider 1: γ here sizes typical influence; the cap bounds the attacker).
+
+    An edge contributes `w_trust · γ · conf · (1/n)` (n = |evidence|) ONLY if it is
+    (i) active, (ii) CALIBRATED (uncalibrated=False → uncalibrated/failed give ZERO,
+    never a floor), (iii) grounds a cited experience, and (iv) SURVIVES replay now.
+    Support is never touched (I6). Correlated forgeries (many edges, one channel/
+    experience) sum here but the gate's aggregate cap makes their total ≤ X — the
+    denominator is the decision, not the edge count."""
+    exp_by_id = {e.exp_id: e for e in evidence}
+    n = len(evidence)
+    if n == 0 or replayer is None:
+        return 0.0
+    raw = 0.0
+    for edge in causal_graph.get("edges", []):
+        if edge.get("status", "active") != "active" or edge.get("uncalibrated", True):
+            continue                                     # uncalibrated/failed → ZERO uplift
+        cited = scope_for_edge(edge)[0]
+        exp = exp_by_id.get(cited)
+        if exp is None:
+            continue                                     # edge does not ground cited evidence
+        if not replay_edge(edge, exp, replayer, samples=samples, tau=tau)["survives"]:
+            continue                                     # forged/spurious → the gate never sees it
+        conf = chain_confidence([edge])["confidence"]
+        raw += w_trust * gamma * conf * (1.0 / n)
+    return raw
