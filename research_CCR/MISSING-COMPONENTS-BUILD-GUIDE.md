@@ -54,7 +54,7 @@ is written *only* through the transaction machinery and is maintained on every c
 | 3 | episodic_index | ✅ | ✅ | `pending`/`rejected` bookkeeping at capture time; index pruning policy | Tier 2 |
 | 4 | procedural_skills | placeholder | ❌ | **everything** — bodies, triggers, sandboxed validation, lifecycle | P5 (hard) |
 | 5 | policy_table | ✅ | ✅ | multi-region confidence floors; strategy promotion | Tier 2 |
-| 6 | strategy_library | ✅ (dict) | ❌ | no commit path; no strategy abstraction over policies | Tier 2 |
+| 6 | strategy_library | ✅ | ✅ | ✅ **BUILT** (parallel form, 2026-09-08): `strategies` field + `StrategyRecord` + `commit_strategy`/`commit_strategy_boot`. (Correction: no `strategies` dict existed before this build; the earlier "✅ (dict) / no commit path" was wrong for this tree.) Full §3.5 two-hop interposition deferred | Tier 2 ✅ |
 | 7 | goals | ✅ | ✅ | goal completion detection; goal-driven retrieval | Tier 2 |
 | 8 | preferences | ✅ | ✅ | conflict rules between user-set and inferred prefs | Tier 2 |
 | 9 | confidence_map + policy | ✅ | ✅ | **decay is computed but never enforced** (no demotion at floor) | Tier 2 |
@@ -215,7 +215,14 @@ control still passes. ~2 days.
 
 ### 2.3 Strategy library
 
-**Spec:** doc 02 §3.5, doc 00 §6.6. **Status:** `strategies` is an empty dict.
+**Spec:** doc 02 §3.5, doc 00 §6.6. **Status: ✅ BUILT (2026-09-08, parallel form).**
+Correction to the earlier snapshot: this tree had **no `strategies` field at all** — the
+"empty dict / no commit path" claim was wrong. Built in the PARALLEL form (`ccr/strategy.py`,
+`ccr/state.py:StrategyRecord`, `LearningEngine.commit_strategy` + `commit_strategy_boot`;
+`tests/test_strategies.py`): a strategy is a cross-region tool ORDERING applied as a prior,
+NOT interposed between policies and tools. The full §3.5 two-hop form (policies over
+strategy IDs) is deferred — it is a schema migration (hot-path read, I2 target, every
+distribution-asserting test), not a wire-up. See the item-7 PR for the design rationale.
 
 A strategy is a *named, cross-region generalization* over policy rows: "for retrieval
 tasks, prefer tools with demonstrated reliability over tools with low latency." Build:
