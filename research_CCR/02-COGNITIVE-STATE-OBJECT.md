@@ -69,7 +69,7 @@ Three header fields carry the security-critical load. `cso_id` is content-addres
 
 ### 3.1 semantic_memory
 
-Semantic memory stores decontextualized knowledge: facts, concepts, domain relationships, and consolidations distilled from episodes. The unit is the **memory item**:
+Semantic memory stores decontextualized knowledge: facts, concepts, domain relationships, and consolidations distilled from episodes. It is **CSO content, not durable-tier evidence**: it lives in the CSO and is *linked* to the ledger by provenance, never *copied* into the durable evidence tier (doc 03 §3.4). The unit is the **memory item**:
 
 ```json
 {

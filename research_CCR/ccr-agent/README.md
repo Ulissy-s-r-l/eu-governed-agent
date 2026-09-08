@@ -36,6 +36,7 @@ Evidence sealing — checkpoint Merkle roots anchored into a grafomem
 | Cognitive State Object (14-component learned state) | mapped **onto** the working-memory tier |
 | Working state on hot path | grafomem `CSO` (matrix `M`, read `y = Mq`) |
 | Experience Ledger | GMP durable-tier fact store (facts = `(predicate, subject, object, valid_from)`) |
+| **CSO content** (semantic_memory, policies, strategies, evaluation_history, …) | **NOT stored in the durable tier — linked by provenance only (doc 03 §3.4 / ADR-0010).** The durable tier holds evidence; committed beliefs are read from the CSO, never from GMP. |
 | Signed state transitions | grafomem signed checkpoints / `Receipt` (Ed25519) |
 | Provenance chain | GMP `CRYPTOGRAPHIC_PROVENANCE` capability + ledger hash chain |
 | Deletion/erasure receipts | grafomem `erase()` receipts (proof the *operation* occurred) |
