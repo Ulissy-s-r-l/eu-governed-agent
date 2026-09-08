@@ -54,7 +54,7 @@ is written *only* through the transaction machinery and is maintained on every c
 | 3 | episodic_index | ✅ | ✅ | `pending`/`rejected` bookkeeping at capture time; index pruning policy | Tier 2 |
 | 4 | procedural_skills | placeholder | ❌ | **everything** — bodies, triggers, sandboxed validation, lifecycle | P5 (hard) |
 | 5 | policy_table | ✅ | ✅ | multi-region confidence floors; strategy promotion | Tier 2 |
-| 6 | strategy_library | ✅ (dict) | ❌ | no commit path; no strategy abstraction over policies | Tier 2 |
+| 6 | strategy_library | ✅ | ✅ | ✅ **BUILT** (parallel form, 2026-09-08): `strategies` field + `StrategyRecord` + `commit_strategy`/`commit_strategy_boot`. (Correction: no `strategies` dict existed before this build; the earlier "✅ (dict) / no commit path" was wrong for this tree.) Full §3.5 two-hop interposition deferred | Tier 2 ✅ |
 | 7 | goals | ✅ | ✅ | goal completion detection; goal-driven retrieval | Tier 2 |
 | 8 | preferences | ✅ | ✅ | conflict rules between user-set and inferred prefs | Tier 2 |
 | 9 | confidence_map + policy | ✅ | ✅ | **decay is computed but never enforced** (no demotion at floor) | Tier 2 |
@@ -81,6 +81,14 @@ A component is done when all four hold:
 ---
 
 ## 2. Tier 2 — finish the components that already exist
+
+> **STATUS 2026-09-08: TIER 2 COMPLETE.** Build-order items 1–8 have all landed —
+> confidence-floor (1), consolidation (2), cosign (3), contradiction→contested (4,
+> incl. contested→GMP), evaluation-history+calibration (5) with the recalibrate
+> write-back, per-channel reliability committed-state wiring (6), strategy library (7,
+> parallel form), GMP-backed memory (8) — plus item 15 (the Hypothesis property
+> harness) as the net. The next live decision is the **Tier-3 fork**: skills (§3.1) /
+> causal graph (§3.2) / state-DAG branch-merge (§4).
 
 These are components whose schema and commit path landed in the Tier-1 sweep but whose
 *semantics* are one commit deep. None requires new architecture; all are ordinary
@@ -207,7 +215,14 @@ control still passes. ~2 days.
 
 ### 2.3 Strategy library
 
-**Spec:** doc 02 §3.5, doc 00 §6.6. **Status:** `strategies` is an empty dict.
+**Spec:** doc 02 §3.5, doc 00 §6.6. **Status: ✅ BUILT (2026-09-08, parallel form).**
+Correction to the earlier snapshot: this tree had **no `strategies` field at all** — the
+"empty dict / no commit path" claim was wrong. Built in the PARALLEL form (`ccr/strategy.py`,
+`ccr/state.py:StrategyRecord`, `LearningEngine.commit_strategy` + `commit_strategy_boot`;
+`tests/test_strategies.py`): a strategy is a cross-region tool ORDERING applied as a prior,
+NOT interposed between policies and tools. The full §3.5 two-hop form (policies over
+strategy IDs) is deferred — it is a schema migration (hot-path read, I2 target, every
+distribution-asserting test), not a wire-up. See the item-7 PR for the design rationale.
 
 A strategy is a *named, cross-region generalization* over policy rows: "for retrieval
 tasks, prefer tools with demonstrated reliability over tools with low latency." Build:
@@ -601,7 +616,7 @@ attack traces for all eleven.
 | 4 | Contradiction detection | 2.1b | 2 |
 | 5 | Evaluation history + calibration | 2.2 | — |
 | 6 | Per-channel reliability (closes the standing rule) | 2.2 | 5 |
-| 7 | Strategy library | 2.3 | 2 |
+| 7 | Strategy library — ✅ **BUILT** (`ccr/strategy.py`, parallel form; `tests/test_strategies.py`) | 2.3 | 2 |
 | 8 | GMP-backed memory persistence | 2.1c | 2 |
 | 9 | Skills: plans, shadow, promotion | 3.1 | — |
 | 10 | Skills: code sandbox | 3.1 | 9 |
