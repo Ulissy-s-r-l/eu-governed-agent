@@ -68,11 +68,12 @@ tests/
 ├── test_calibration.py   # per-channel reliability + recalibrate tx (doc 07 §2.2a, doc 04 §5B)
 ├── test_gmp_memory.py    # GMP memory persistence; native supersede + contested→GMP (doc 02 §3.1)
 ├── test_contradiction.py # contradiction detection → contested status (doc 02 §3.1)
+├── test_strategies.py    # strategy library: cross-region induction + boot prior (doc 02 §3.5)
 └── test_properties.py    # Hypothesis property harness — Phase 8 Stage 1 (build-guide §6, item 15)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
-`consolidation.py`, `calibration.py`, `gmp_memory.py`, `contradiction.py`. Suite: **64 tests**
-(the last is a stateful machine running 10k generated operation sequences).
+`consolidation.py`, `calibration.py`, `gmp_memory.py`, `contradiction.py`, `strategy.py`.
+Suite: **69 tests** (one is a stateful machine running 10k generated operation sequences).
 
 ## Run
 
@@ -126,6 +127,30 @@ not structural** — unlike `superseded_by` (native, single-successor), "contest
 `valid_until`" is a CCR convention: a consumer reading the **audit view** still
 sees the belief. Tested against a convention-unaware `audit()` consumer, so the
 ceiling is documented, not hidden.
+
+### Strategy library (doc 02 §3.5): parallel now, interpose later — **Tier 2 complete**
+
+**Design answer (the one item-7 question).** §3.5's end state is *policies over strategy
+IDs* with a two-hop `select_tool`. Building that now is a **schema migration disguised
+as a feature** — it changes the hot-path read, the I2 normalization target (do
+strategies or tools sum to 1?), and every distribution-asserting test. So this build
+takes the **parallel form**: a strategy is a cross-region tool **ordering**
+(`StrategyRecord`), not a distribution and not interposed; `policies` still map region
+→ distribution over tools directly. The learning value of §3.5 — reuse what worked
+elsewhere — is delivered by applying a strategy as a **prior**: when the same ordering
+has committed in ≥ k=3 regions (`StrategyInducer`), it is committed through the gate,
+and a new region's first policy is **booted** from that ordering instead of uniform,
+with the boot recorded in the policy entry's provenance. Interpose the full two-hop
+form later, when a consumer needs it.
+
+Induction gathers evidence as the **union** of the supporting regions' experiences;
+support is counted over `root_support` (I6 — never a per-region sum). A strategy
+induced from evidence that fails admission (forged low-trust self-reports) is
+**rejected at the gate**, like everything else.
+
+With item 7 in, **Tier 2 is complete** — build-guide items 1–8 have all landed, with
+item 15 (the property harness) as the net. The Tier-3 fork (skills / causal graph /
+state-DAG) is the next live decision.
 
 `ccr/demo_transactions.py` proves the three properties that differentiate CCR
 (none of which require the agent to be good at anything):

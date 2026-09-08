@@ -83,6 +83,39 @@ class MemoryItem:
 
 
 @dataclass
+class StrategyRecord:
+    """A named cross-region strategy (doc 02 §3.5): the 𝒰 of the formal model.
+
+    PARALLEL FORM (see the item-7 PR): a strategy is a cross-region *ordering* of
+    tools, NOT a distribution, and NOT yet interposed between policies and tools.
+    Today's `policies` still map region → distribution over tool names directly;
+    a strategy is applied as a *prior* — its ordering seeds a new region's first
+    policy instead of uniform. The full §3.5 shape (policies over strategy IDs,
+    two-hop `select_tool`) is deferred: it changes the hot-path read, the I2
+    normalization target, and every distribution-asserting test — a schema
+    migration, not this feature."""
+    id: str
+    name: str
+    ordering: list[str]                      # tools best→worst (a ranking, not a distribution)
+    support_regions: list[str]              # the regions whose committed policies induced it
+    confidence: float
+    sources: list[str]                      # root exp_ids across support_regions (I4/I6)
+    status: str = "active"                  # active | deprecated
+    created_tx: str = ""
+
+
+def distribution_from_ordering(ordering: list[str]) -> dict[str, float]:
+    """Derive a per-region distribution from a strategy's ordering, for use as a
+    PRIOR when booting a new region (doc 02 §3.5). Linear rank weights (best gets
+    n, worst gets 1), normalized. Deliberately NOT rounded — exact fractions keep
+    the sum at 1 within float epsilon, respecting the I2 "distributions sum to 1"
+    property (the rounding bug the property harness now guards)."""
+    n = len(ordering)
+    total = n * (n + 1) / 2                  # sum of 1..n
+    return {t: (n - i) / total for i, t in enumerate(ordering)}
+
+
+@dataclass
 class CognitiveState:
     version: int
     policies: dict[str, PolicyEntry]
@@ -92,6 +125,7 @@ class CognitiveState:
     confidence_policy: dict = field(         # doc 02 §3.6; versioned state
         default_factory=lambda: dict(DEFAULT_CONFIDENCE_POLICY))
     semantic_memory: dict = field(default_factory=dict)   # id -> MemoryItem (doc 02 §3.1)
+    strategies: dict = field(default_factory=dict)        # id -> StrategyRecord (doc 02 §3.5)
     # doc 02 §3.8 / doc 04 §5B committed shape, written ONLY by a recalibrate tx:
     #   {"reference": <channel>,                         # designated once, then immutable
     #    "channels": {c: {"reliability": r, "window": {...}}},

@@ -82,6 +82,14 @@ A component is done when all four hold:
 
 ## 2. Tier 2 — finish the components that already exist
 
+> **STATUS 2026-09-08: TIER 2 COMPLETE.** Build-order items 1–8 have all landed —
+> confidence-floor (1), consolidation (2), cosign (3), contradiction→contested (4,
+> incl. contested→GMP), evaluation-history+calibration (5) with the recalibrate
+> write-back, per-channel reliability committed-state wiring (6), strategy library (7,
+> parallel form), GMP-backed memory (8) — plus item 15 (the Hypothesis property
+> harness) as the net. The next live decision is the **Tier-3 fork**: skills (§3.1) /
+> causal graph (§3.2) / state-DAG branch-merge (§4).
+
 These are components whose schema and commit path landed in the Tier-1 sweep but whose
 *semantics* are one commit deep. None requires new architecture; all are ordinary
 engineering against the existing transaction machinery. Total estimate: **6–9 days**.
@@ -601,7 +609,7 @@ attack traces for all eleven.
 | 4 | Contradiction detection | 2.1b | 2 |
 | 5 | Evaluation history + calibration | 2.2 | — |
 | 6 | Per-channel reliability (closes the standing rule) | 2.2 | 5 |
-| 7 | Strategy library | 2.3 | 2 |
+| 7 | Strategy library — ✅ **BUILT** (`ccr/strategy.py`, parallel form; `tests/test_strategies.py`) | 2.3 | 2 |
 | 8 | GMP-backed memory persistence | 2.1c | 2 |
 | 9 | Skills: plans, shadow, promotion | 3.1 | — |
 | 10 | Skills: code sandbox | 3.1 | 9 |

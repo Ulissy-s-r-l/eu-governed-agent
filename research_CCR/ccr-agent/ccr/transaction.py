@@ -23,7 +23,8 @@ from typing import Optional
 from .experience import Experience, canonical_json, new_id, utcnow
 from .ledger import ExperienceLedger, LedgerEntry
 from .state import (
-    CognitiveState, PolicyEntry, MemoryItem, confidence_of, below_floor, is_uniform,
+    CognitiveState, PolicyEntry, MemoryItem, StrategyRecord, confidence_of,
+    below_floor, is_uniform, distribution_from_ordering,
 )
 from .support import root_support
 from .calibration import (
@@ -482,6 +483,103 @@ class LearningEngine:
                 self.memory_store.mark_contested(b, a, tx)
             for mid in restored:
                 self.memory_store.clear_contested(mid, tx)
+        return tx, new_state
+
+    # -- commit a strategy: cross-region generalization (doc 02 §3.5) ----------
+
+    def commit_strategy(self, state: CognitiveState, cand, evidence: list[Experience]
+                        ) -> tuple[TransactionRecord, CognitiveState]:
+        """Commit an induced `StrategyCandidate` (from `StrategyInducer`) as a
+        StrategyRecord, through the gate. `evidence` is the UNION of the supporting
+        regions' experiences; the gate counts support over `root_support` (I6), so
+        overlapping episode sets across regions are deduped, never summed — a
+        strategy is not made to look better-supported by citing shared evidence
+        twice. Poison discipline: a strategy induced from evidence that fails
+        admission (e.g. low-trust forged self-reports) is REJECTED at the gate,
+        with the rejection recorded."""
+        reliability_of = reliability_from_state(state.evaluation_history)
+        admission = self.gate.evaluate_evidence(evidence, reliability_of=reliability_of)
+        sources = sorted({e.exp_id for e in evidence})
+        tx = TransactionRecord(
+            tx_id=new_id("tx"), tx_type="learn", parent_state=state.commitment,
+            status="rejected", admission=admission, validation={},
+            delta={"op": "insert", "target": "strategies", "name": cand.name,
+                   "ordering": cand.ordering, "support_regions": cand.support_regions,
+                   "sources": sources, "confidence": cand.confidence},
+            new_commitment=None)
+
+        if not admission["admit"]:
+            tx.validation = {"verdict": "not_reached", "reason": "admission gate"}
+            self._record(tx); return tx, state
+        if not sources:                                # I4: provenance completeness
+            tx.validation = {"verdict": "reject", "reason": "no sources (violates I4)"}
+            self._record(tx); return tx, state
+        if len(cand.support_regions) < 2:              # a strategy needs cross-region support
+            tx.validation = {"verdict": "reject", "reason": "strategy not cross-region"}
+            self._record(tx); return tx, state
+        tx.validation = {"verdict": "commit"}
+
+        new_state = state.copy()
+        new_state.version = state.version + 1
+        new_state.parent_commitment = state.commitment
+        strat_id = new_id("strat")
+        new_state.strategies[strat_id] = StrategyRecord(
+            id=strat_id, name=cand.name, ordering=cand.ordering,
+            support_regions=cand.support_regions, confidence=cand.confidence,
+            sources=sources, status="active", created_tx=tx.tx_id)
+        tx.delta["strategy_id"] = strat_id
+        new_state.update_ref = tx.tx_id
+        new_state.seal()
+
+        tx.status = "committed"
+        tx.new_commitment = new_state.commitment
+        self._record(tx)
+        return tx, new_state
+
+    def commit_strategy_boot(self, state: CognitiveState, region: str, strategy_id: str
+                             ) -> tuple[TransactionRecord, CognitiveState]:
+        """Boot a NEW region's first policy from a committed strategy's ordering
+        instead of uniform (doc 02 §3.5 — the strategy applied as a PRIOR). The
+        booted distribution is derived from the ordering; the policy entry's
+        provenance records the boot: `updated_tx` is this tx, and the tx delta
+        names the `strategy_id`. Rejected if the strategy is not active, or the
+        region has already learned (a boot seeds an unlearned region, it does not
+        overwrite learned behaviour)."""
+        strat = state.strategies.get(strategy_id)
+        tx = TransactionRecord(
+            tx_id=new_id("tx"), tx_type="learn", parent_state=state.commitment,
+            status="rejected",
+            admission={"skipped": True,
+                       "reason": "strategy boot: applies an already-gated strategy as a prior"},
+            validation={},
+            delta={"op": "boot", "target": "policy_table", "region": region,
+                   "strategy_id": strategy_id},
+            new_commitment=None)
+
+        if strat is None or strat.status != "active":
+            tx.validation = {"verdict": "reject", "reason": "strategy not found or not active"}
+            self._record(tx); return tx, state
+        incumbent = state.policy_for(region)
+        if incumbent is not None and not is_uniform(incumbent.distribution):
+            tx.validation = {"verdict": "reject",
+                             "reason": "region already learned — boot seeds only an unlearned region"}
+            self._record(tx); return tx, state
+        tx.validation = {"verdict": "commit", "booted_from": strategy_id}
+
+        new_state = state.copy()
+        new_state.version = state.version + 1
+        new_state.parent_commitment = state.commitment
+        new_state.policies[region] = PolicyEntry(
+            region=region, distribution=distribution_from_ordering(strat.ordering),
+            confidence=strat.confidence, updated_tx=tx.tx_id,
+            updated_version=new_state.version)
+        tx.delta["distribution"] = new_state.policies[region].distribution
+        new_state.update_ref = tx.tx_id
+        new_state.seal()
+
+        tx.status = "committed"
+        tx.new_commitment = new_state.commitment
+        self._record(tx)
         return tx, new_state
 
     # -- maintenance: evidence-free demotion (doc 04 §5A) ---------------------
