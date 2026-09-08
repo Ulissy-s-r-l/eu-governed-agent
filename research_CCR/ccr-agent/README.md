@@ -70,13 +70,14 @@ tests/
 ├── test_durable_tier.py  # GUARD (no CSO mirror) + §3.2 audit join on the durable tier (doc 03 §3.4)
 ├── test_contradiction.py # contradiction detection → contested status (doc 02 §3.1)
 ├── test_strategies.py    # strategy library: cross-region induction + boot prior (doc 02 §3.5)
+├── test_causal.py        # causal graph: attributed edges, store + stage-1 (doc 02 §3.7, doc 05)
 └── test_properties.py    # Hypothesis property harness — Phase 8 Stage 1 (build-guide §6, item 15)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
-`consolidation.py`, `calibration.py`, `contradiction.py`, `strategy.py`. `gmp_bridge.py` maps
-the §3.2 **evidence** kinds (experience, gate_decision, checkpoint) to GMP facts; there is no
-CSO-content mirror (doc 03 §3.4 / ADR-0010).
-Suite: **68 tests** (one is a stateful machine running 10k generated operation sequences).
+`consolidation.py`, `calibration.py`, `contradiction.py`, `strategy.py`, `causal.py`.
+`gmp_bridge.py` maps the §3.2 **evidence** kinds (experience, gate_decision, checkpoint) to
+GMP facts; there is no CSO-content mirror (doc 03 §3.4 / ADR-0010).
+Suite: **76 tests** (one is a stateful machine running 10k generated operation sequences).
 
 ## Run
 
@@ -161,6 +162,40 @@ induced from evidence that fails admission (forged low-trust self-reports) is
 With item 7 in, **Tier 2 is complete** — build-guide items 1–8 have all landed, with
 item 15 (the property harness) as the net. The Tier-3 fork (skills / causal graph /
 state-DAG) is the next live decision.
+
+### Causal graph (doc 02 §3.7 / doc 05): attributed, not discovered — store + stage-1
+
+`ccr/causal.py` transcribes the attribution the evaluator **already produced**
+(`experience.evaluation.attribution`) into `attributed-to` edges. **No causal
+inference from observational data** — the graph does not learn structure, it records
+claims that came with a source. Edges are inserted **beside the delta** (`tx.causal`
++ `state.causal_graph`) by the citing `commit`/`commit_memory`/`commit_strategy`, and
+the **admission gate does not read the graph** (proven by a test: the gate's decision
+is identical with and without it). Nodes are **references** into the ledger, never
+copies.
+
+- **Stage 1 (local) only.** Today only `SimulatorGroundTruthEvaluator` emits a usable
+  (local) attribution, so every edge carries `attribution_stage == "local"`. A graph
+  of only local edges reflects the **emitter's limit**, not the domain; stages 2–4 are
+  named in `causal.py` and light up when an evaluator emits them.
+- **Born falsifiable.** Every edge carries a `counterfactual_pattern` (bias/anomaly) —
+  stored with no consumer until the counterfactuals item. It is not pruned: an edge
+  *born* falsifiable differs from one retrofitted with a test hook later.
+- **`attributed_by` is derived, never supplied.** `causal_edge(experience, tx)` derives
+  it from the cited experience's **signed** evaluation channel — a caller-supplied value
+  is *structurally unrepresentable* (no such parameter), so a self-report source cannot
+  be labelled `evaluator`. It remains **trusted, not verified** (the channel label is
+  self-reported-but-signed); an edge whose source channel lacks a committed calibration
+  is flagged `uncalibrated` and MUST NOT be read as calibrated (doc 07 §2.2a). The remedy
+  (reference-relative pricing) is deferred with the admission wiring.
+- **Q3 why-walk** (`why_believed`) closes doc 03 §6's `causal_basis → cg-edge` hop, and
+  resolves **on the durable tier** via a new `ccr:gate_decision/caused` fact (subject =
+  tx_id — never a CSO id; the durable-tier guard stays green).
+- **Deferred to the counterfactuals item** (guide item 12): confidence propagation
+  (doc 05 §4), replay-against-`counterfactual_pattern`, queries Q1/Q2/Q4, and **any edge
+  reaching the gate**. The mitigation (replay) and the consumption (admission) **ship
+  together, or neither does** — a fabricated causal chain is `attribution laundering`
+  (doc 07 taxonomy), and admission wiring without the replay would open that vector.
 
 `ccr/demo_transactions.py` proves the three properties that differentiate CCR
 (none of which require the agent to be good at anything):

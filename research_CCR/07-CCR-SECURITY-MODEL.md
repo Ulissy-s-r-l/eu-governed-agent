@@ -70,6 +70,7 @@ The roadmap's seven threat classes are mapped to attack surface paths and OWASP 
 | **Memory poisoning** | Commit (semantic memory) | ASI06 | Malicious fact becomes persistent belief |
 | **Policy poisoning** | Commit (policy table) | ASI01 + ASI02 | Bad experience causes dangerous strategy update |
 | **Recursive self-reinforcement** | Evaluation + admission | ASI10 | Agent generates evidence supporting its own incorrect beliefs |
+| **Attribution laundering** | Evaluation → causal graph | ASI09 + ASI10 | A fabricated causal chain justifies a *future* policy update (doc 05 §6). Not a new mechanism: **feedback poisoning (§2.2) with a compounding lever into recursive self-reinforcement (§2.5)** — feedback poisoning biases one evaluation, a laundered edge biases what is learned *next*. Mitigated by **L3 replay against the edge's `counterfactual_pattern`** (a forged chain must survive replay); until that replay exists, **no causal edge feeds admission** (doc 05 §3 store build — edges are recorded, not consumed). |
 | **Cognitive drift** | Accumulated commits | ASI10 | Gradual behavioral divergence from intended behavior |
 | **Identity drift** | Identity layer | ASI03 | Behavior changes so much that original authority assumptions are invalid |
 

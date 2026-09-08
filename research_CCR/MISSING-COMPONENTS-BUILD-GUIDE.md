@@ -58,7 +58,7 @@ is written *only* through the transaction machinery and is maintained on every c
 | 7 | goals | ✅ | ✅ | goal completion detection; goal-driven retrieval | Tier 2 |
 | 8 | preferences | ✅ | ✅ | conflict rules between user-set and inferred prefs | Tier 2 |
 | 9 | confidence_map + policy | ✅ | ✅ | **decay is computed but never enforced** (no demotion at floor) | Tier 2 |
-| 10 | causal_graph | placeholder | ❌ | **everything** — attribution pipeline, edge admission, counterfactual queries | P5 (hard) |
+| 10 | causal_graph | ✅ (store) | ✅ (edges) | 🟡 **PARTIAL** (2026-09-08): `ccr/causal.py` store + stage-1 (local) attributed edges committed beside the delta + Q3 why-walk (durable-tier). Open: stages 2–4, edge admission, counterfactual queries | P5 (hard) |
 | 11 | evaluation_history | ✅ (dict) | ❌ | not written at all; the calibration loop that reads it is the L4 seed | Tier 2 |
 | 12 | provenance_index | ✅ | ✅ | derivation types beyond `"direct"` (consolidated, inferred, merged) | Tier 2 |
 | 13 | lineage (parent, commitment, signature) | ✅ | ✅ | single-parent chain only; merge needs multi-parent | P6 |
@@ -620,8 +620,8 @@ attack traces for all eleven.
 | 8 | GMP-backed memory persistence | 2.1c | 2 |
 | 9 | Skills: plans, shadow, promotion | 3.1 | — |
 | 10 | Skills: code sandbox | 3.1 | 9 |
-| 11 | Causal graph: store + attribution | 3.2 | — |
-| 12 | Causal graph: counterfactuals | 3.2 | 11 |
+| 11 | Causal graph: store + attribution — 🟡 **PARTIAL** (`ccr/causal.py`, stage-1 local edges + Q3 why-walk; `tests/test_causal.py`). Open: stages 2–4 emitters | 3.2 | — |
+| 12 | Causal graph: counterfactuals — **OPEN** (§4 confidence propagation, replay-against-`counterfactual_pattern`, Q1/Q2/Q4, admission wiring) | 3.2 | 11 |
 | 13 | State DAG: parents format + store | 4 | — |
 | 14 | State DAG: merge + validation | 4 | 13 |
 | 15 | Hypothesis property tests (stage 1) — ✅ **BUILT** (`tests/test_properties.py`) | 6 | — |
