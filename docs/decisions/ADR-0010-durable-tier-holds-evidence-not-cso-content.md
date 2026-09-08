@@ -67,19 +67,21 @@ walked back (a separate change); the "no path" components are retroactively **co
   full commit sequence (memory, policy, strategy, recalibrate) writes **no CSO-derived fact** to the
   durable tier.
 
-- **The inversion this rule exposes — the durable tier is INCOMPLETE, not merely uncrossed.**
-  `gate_decision` records are the change-log that documents **every** CSO mutation (admit/reject, the
-  functional's component values, the committed delta), and doc 03 §3.2 places them **in the ledger
-  precisely** so that *"why did the agent start avoiding Tool A?"* is answerable by joining the
-  experience, the gate decision that admitted it, and the transaction that committed the policy. But
-  `GMPFactBridge.append` admits `kind == "experience"` **only** — so `gate_decision` (and
-  `checkpoint`) records reach the durable tier by **no path**. Under this rule the durable tier holds
-  the evidence but **not the evidence that the evidence was admitted**: the §3.2 three-way join is
-  satisfiable today **only on the local ledger**. Closing it means extending the bridge to
-  `gate_decision` and `checkpoint` records — those are §3.2 evidence and *belong* in the durable tier,
-  unlike CSO content. **DEFERRED**, recorded here so it is not rediscovered as a surprise. It is the
-  legitimate durable-tier work this rule leaves open, and it is the opposite of the item-C mistake:
-  mirror *more evidence*, never *any belief*.
+- **The inversion this rule exposed — the durable tier was INCOMPLETE, not merely uncrossed — is now
+  CLOSED (2026-09-08, PR #30).** `gate_decision` records are the change-log that documents **every**
+  CSO mutation (admit/reject, the functional's component values, the committed delta), and doc 03 §3.2
+  places them **in the ledger precisely** so that *"why did the agent start avoiding Tool A?"* is
+  answerable by joining the experience, the gate decision that admitted it, and the transaction that
+  committed the policy. Previously `GMPFactBridge.append` admitted `kind == "experience"` **only**, so
+  the §3.2 three-way join was satisfiable **only on the local ledger**. The bridge now also maps
+  `gate_decision` → `ccr:gate_decision` (subject = tx_id; object = the admission/validation audit
+  **including the delta**) plus a `ccr:gate_decision/on` link naming the cited exp_ids, and
+  `checkpoint` → `ccr:checkpoint` — so the join resolves **entirely on the durable tier, for committed
+  AND rejected transactions** (`tests/test_durable_tier.py`). This is the opposite of the item-C
+  mistake: mirror *more evidence* (the SUBJECT stays the tx_id / checkpoint_id; a delta's distribution
+  or ordering rides in the OBJECT as evidence), never *any belief* (no fact subject is a CSO id, no
+  `ccr:mem/*` predicate — the guard test asserts both). `annotation` is still unmapped: nothing writes
+  one today, and designing for a phantom is the mirror mistake in a different costume.
 
 - **DOCUMENTED-OPEN DOOR — a curated belief export (candidate 2) activates only when ALL of:**
   (a) a **concrete consumer** exists with a stated constraint that evidence-sharing through its own
@@ -97,16 +99,12 @@ walked back (a separate change); the "no path" components are retroactively **co
   observed real-GMP behaviour. Any statement here about what a real GMP consumer sees is a claim about
   the spec, pending a live backend.
 
-- **Cross-reference [ADR-0008](ADR-0008-b3-best-client-of-general-ledger.md).** The deferred
-  gate_decision/checkpoint mirroring and the candidate-2 freshness link both obey the same constraint:
-  a gap in what the ledger/GMP can express is fixed **upstream as a Foundation record**, never patched
-  in the product write path.
+- **Cross-reference [ADR-0008](ADR-0008-b3-best-client-of-general-ledger.md).** The candidate-2
+  freshness link (fact → CSO commitment) obeys the same constraint: a gap in what the ledger/GMP can
+  express is fixed **upstream as a Foundation record**, never patched in the product write path.
 
 ## Open sub-questions
 
-- The deferred `gate_decision`/`checkpoint` mirroring: is it needed before a real GMP backend exists,
-  or does it land with the first live GMP wiring (so the durable-tier join is complete the day it is
-  first real)?
 - What is the concrete review test that catches a *new* component mirroring itself to GMP — the
   failure mode that produced item C — beyond the guard test this decision ships?
 - If cross-agent evidence transfer (not belief) is built, does the receiving gate need anything the

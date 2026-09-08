@@ -35,7 +35,7 @@ Evidence sealing — checkpoint Merkle roots anchored into a grafomem
 |---|---|
 | Cognitive State Object (14-component learned state) | mapped **onto** the working-memory tier |
 | Working state on hot path | grafomem `CSO` (matrix `M`, read `y = Mq`) |
-| Experience Ledger | GMP durable-tier fact store (facts = `(predicate, subject, object, valid_from)`) |
+| Experience Ledger | GMP durable-tier fact store (facts = `(predicate, subject, object, valid_from)`). Holds the §3.2 **evidence** kinds — experience, gate_decision, checkpoint — so the three-way audit join resolves on the durable tier (doc 03 §3.4 / ADR-0010). |
 | **CSO content** (semantic_memory, policies, strategies, evaluation_history, …) | **NOT stored in the durable tier — linked by provenance only (doc 03 §3.4 / ADR-0010).** The durable tier holds evidence; committed beliefs are read from the CSO, never from GMP. |
 | Signed state transitions | grafomem signed checkpoints / `Receipt` (Ed25519) |
 | Provenance chain | GMP `CRYPTOGRAPHIC_PROVENANCE` capability + ledger hash chain |
@@ -67,15 +67,16 @@ tests/
 ├── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
 ├── test_consolidation.py # consolidation (§2.1a/d) + I6 support independence
 ├── test_calibration.py   # per-channel reliability + recalibrate tx (doc 07 §2.2a, doc 04 §5B)
-├── test_durable_tier.py  # GUARD: durable tier holds evidence only, no CSO mirror (doc 03 §3.4)
+├── test_durable_tier.py  # GUARD (no CSO mirror) + §3.2 audit join on the durable tier (doc 03 §3.4)
 ├── test_contradiction.py # contradiction detection → contested status (doc 02 §3.1)
 ├── test_strategies.py    # strategy library: cross-region induction + boot prior (doc 02 §3.5)
 └── test_properties.py    # Hypothesis property harness — Phase 8 Stage 1 (build-guide §6, item 15)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
 `consolidation.py`, `calibration.py`, `contradiction.py`, `strategy.py`. `gmp_bridge.py` maps
-**experiences** (evidence) to GMP facts; there is no CSO-content mirror (doc 03 §3.4 / ADR-0010).
-Suite: **65 tests** (one is a stateful machine running 10k generated operation sequences).
+the §3.2 **evidence** kinds (experience, gate_decision, checkpoint) to GMP facts; there is no
+CSO-content mirror (doc 03 §3.4 / ADR-0010).
+Suite: **68 tests** (one is a stateful machine running 10k generated operation sequences).
 
 ## Run
 
