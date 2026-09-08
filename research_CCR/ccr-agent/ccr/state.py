@@ -133,6 +133,12 @@ class CognitiveState:
     # The gate's trust term reads reliability from HERE (committed) — never from a
     # live CalibrationLoop. Empty {} = never recalibrated ⇒ gate uses self-report.
     evaluation_history: dict = field(default_factory=dict)
+    # doc 02 §3.7 / doc 05 §2.3: attributed causal graph. `nodes` are REFERENCES into
+    # the ledger / strategy library (never copies — §3.7 separation); `edges` are
+    # `attributed-to` claims with attributed_by + confidence + created_tx. Edges are
+    # inserted BESIDE the delta by the citing tx (see ccr/causal.py); the admission
+    # gate does NOT read this graph (doc 05 §6 admission wiring is a later item).
+    causal_graph: dict = field(default_factory=lambda: {"nodes": [], "edges": []})
 
     def body(self) -> dict:
         d = asdict(self)

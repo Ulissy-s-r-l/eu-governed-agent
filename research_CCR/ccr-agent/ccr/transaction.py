@@ -31,6 +31,7 @@ from .calibration import (
     reliability_from_state, recompute_reliability, REFERENCE_RELIABILITY,
 )
 from .contradiction import detect_and_mark, reconcile_contested
+from .causal import insert_edges
 from . import cosign
 
 
@@ -60,6 +61,10 @@ class TransactionRecord:
     delta: Optional[dict]
     new_commitment: Optional[str]
     created_at: str = field(default_factory=utcnow)
+    # doc 05 §3: causal edges inserted BY this tx, recorded BESIDE the delta — the
+    # graph update is CAUSED BY the commit, not EVIDENCE FOR it, so it is not part of
+    # the object the admission gate scores (doc 05 §6 / non-negotiable 3).
+    causal: Optional[list] = None
     # --- cgr.cosign.v1 envelope (approval-free mode) ----------------------
     schema: Optional[str] = None           # "cgr.cosign.v1" once co-signed
     profile: Optional[str] = None          # "cgr.learning-tx.v1"
@@ -352,6 +357,8 @@ class LearningEngine:
             region=region, distribution=cand.distribution,
             confidence=cand.confidence, updated_tx=tx.tx_id,
             updated_version=new_state.version)
+        # attributed causal edges from the cited evidence — BESIDE the delta (doc 05 §3)
+        tx.causal = insert_edges(new_state, evidence, tx) or None
         new_state.update_ref = tx.tx_id
         new_state.seal()
 
@@ -465,6 +472,8 @@ class LearningEngine:
                              "contested_marked": marked,
                              "contested_restored": restored}
 
+        # attributed causal edges from the cited evidence — BESIDE the delta (doc 05 §3)
+        tx.causal = insert_edges(new_state, evidence, tx) or None
         new_state.update_ref = tx.tx_id
         new_state.seal()
 
@@ -520,6 +529,8 @@ class LearningEngine:
             support_regions=cand.support_regions, confidence=cand.confidence,
             sources=sources, status="active", created_tx=tx.tx_id)
         tx.delta["strategy_id"] = strat_id
+        # attributed causal edges from the cited evidence — BESIDE the delta (doc 05 §3)
+        tx.causal = insert_edges(new_state, evidence, tx) or None
         new_state.update_ref = tx.tx_id
         new_state.seal()
 

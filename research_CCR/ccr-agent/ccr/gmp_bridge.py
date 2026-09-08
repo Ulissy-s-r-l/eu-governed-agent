@@ -98,10 +98,12 @@ def experience_to_facts(exp: Experience, tenant_id: str = GMP_DEFAULT_TENANT) ->
 def gate_decision_to_facts(payload: dict,
                            tenant_id: str = GMP_DEFAULT_TENANT) -> list[GMPFact]:
     """A gate_decision record → its audit fact (§3.2 "auditable, including its
-    refusals") plus, when the tx cited evidence, a `ccr:gate_decision/on` link
-    naming the cited exp_ids. Subject is always the tx_id — the delta's CSO content
-    (a distribution, a strategy ordering) rides in the OBJECT as evidence about the
-    change, never as a subject or a belief predicate (doc 03 §3.4 / ADR-0010)."""
+    refusals"); a `ccr:gate_decision/on` link naming the cited exp_ids (when the tx
+    cited evidence); and a `ccr:gate_decision/caused` fact per attributed causal edge
+    the tx inserted (doc 05 §3), so the doc 03 §6 causal hop closes on the durable
+    tier. Subject is always the tx_id — the delta's CSO content (a distribution, a
+    strategy ordering, an edge) rides in the OBJECT as evidence about the change,
+    never as a subject or a belief predicate (doc 03 §3.4 / ADR-0010)."""
     tx_id = payload["tx_id"]
     vf = payload.get("created_at", "")
     delta = payload.get("delta") or {}
@@ -126,6 +128,22 @@ def gate_decision_to_facts(payload: dict,
         facts.append(GMPFact(predicate="ccr:gate_decision/on", subject=tx_id,
                              obj=canonical_json(sorted(cited)).decode(), valid_from=vf,
                              tenant_id=tenant_id, importance=0.9))
+    # causal hop (doc 05 §3): the attributed edges this tx inserted, so the doc 03 §6
+    # `causal_basis → cg-edge` walk closes on the durable tier. Subject stays the
+    # tx_id; `cited_exp` (the outcome node's ledger ref) lets a consumer hop to the
+    # experience facts. The edge is EVIDENCE about a change; never a CSO subject.
+    for edge in (payload.get("causal") or []):
+        cited_exp = str(edge.get("from", "")).split("cg:outcome:", 1)[-1]
+        facts.append(GMPFact(
+            predicate="ccr:gate_decision/caused", subject=tx_id,
+            obj=canonical_json({
+                "edge_id": edge.get("edge_id"), "rel": edge.get("rel"),
+                "from": edge.get("from"), "to": edge.get("to"),
+                "attributed_by": edge.get("attributed_by"),
+                "attribution_stage": edge.get("attribution_stage"),
+                "uncalibrated": edge.get("uncalibrated"),
+                "cited_exp": cited_exp,
+            }).decode(), valid_from=vf, tenant_id=tenant_id, importance=0.9))
     return facts
 
 
