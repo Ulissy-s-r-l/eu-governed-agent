@@ -171,12 +171,16 @@ class LearningEngine:
     The ONLY writer of behavioral state (doc 00 §6.9)."""
 
     def __init__(self, ledger: ExperienceLedger, gate: Optional[AdmissionGate] = None,
-                 replay_tolerance: float = 0.05, memory_store=None):
+                 replay_tolerance: float = 0.05):
         self.ledger = ledger
         self.gate = gate or AdmissionGate()
         self.replay_tolerance = replay_tolerance
         self.transactions: list[TransactionRecord] = []
-        self.memory_store = memory_store        # optional GMPMemoryStore (doc 02 §3.1)
+        # NB (doc 03 §3.4 / ADR-0010): the engine does NOT mirror CSO content
+        # (semantic_memory, policies, strategies, evaluation_history) to the durable
+        # tier. Committed beliefs live in the CSO and are linked to the ledger by
+        # provenance; they are never copied into GMP. The removed `memory_store`
+        # belief-mirror (old gmp_memory.py) was an undocumented divergence from §3.3.
 
     # -- propose (doc 04 stage 4) -------------------------------------------
 
@@ -436,18 +440,15 @@ class LearningEngine:
             # MUST NOT un-contest. Status is deliberately left untouched — letting
             # repetition of one side clear a contested pair would be exactly the
             # confidence-driven auto-resolution the amendment forbids.
-            committed_item = item
         else:
             mem_id = new_id("mem")
-            committed_item = MemoryItem(
+            new_state.semantic_memory[mem_id] = MemoryItem(
                 id=mem_id, type=cand.type, content=cand.content,
                 confidence=cand.confidence, sources=sources, status="active",
                 created_tx=tx.tx_id, last_confirmed_tx=tx.tx_id)
-            new_state.semantic_memory[mem_id] = committed_item
             tx.delta["mem_id"] = mem_id
-            # A superseding insert deprecates its in-state predecessor (previously
-            # this only affected GMP; the CSO copy kept the old item active). This
-            # is what lets a supersede RESOLVE a contested pair.
+            # A superseding insert deprecates its in-state predecessor, which is what
+            # lets a supersede RESOLVE a contested pair (a CSO-only transition).
             if supersedes_mem_id and supersedes_mem_id in new_state.semantic_memory:
                 new_state.semantic_memory[supersedes_mem_id].status = "deprecated"
 
@@ -470,19 +471,10 @@ class LearningEngine:
         tx.status = "committed"
         tx.new_commitment = new_state.commitment
         self._record(tx)
-        # GMP persistence (doc 02 §3.1, §2.1c): a durable, queryable fact. supersedes
-        # -> the native GMP supersede op (ADR-0008), never a payload flag.
-        if self.memory_store is not None:
-            self.memory_store.on_commit(committed_item, tx, cand.op,
-                                        supersedes_mem_id=supersedes_mem_id)
-            # Propagate the contested transitions to GMP so the durable tier does
-            # not serve a belief the in-state runtime has quarantined (doc 02 §3.1).
-            # marked/restored are the exact deltas detect/reconcile just produced.
-            for a, b in marked:
-                self.memory_store.mark_contested(a, b, tx)
-                self.memory_store.mark_contested(b, a, tx)
-            for mid in restored:
-                self.memory_store.clear_contested(mid, tx)
+        # No durable-tier mirror (doc 03 §3.4 / ADR-0010): the committed MemoryItem
+        # and its contested transitions live in the CSO only. The gate_decision this
+        # `_record` appended is the ledger's evidence that the change was admitted;
+        # the belief itself is read from the CSO, never from GMP.
         return tx, new_state
 
     # -- commit a strategy: cross-region generalization (doc 02 §3.5) ----------

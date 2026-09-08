@@ -67,14 +67,15 @@ tests/
 ├── test_maintenance.py # confidence-floor: read-time floor + maintenance demotion (doc 04 §5A)
 ├── test_consolidation.py # consolidation (§2.1a/d) + I6 support independence
 ├── test_calibration.py   # per-channel reliability + recalibrate tx (doc 07 §2.2a, doc 04 §5B)
-├── test_gmp_memory.py    # GMP memory persistence; native supersede + contested→GMP (doc 02 §3.1)
+├── test_durable_tier.py  # GUARD: durable tier holds evidence only, no CSO mirror (doc 03 §3.4)
 ├── test_contradiction.py # contradiction detection → contested status (doc 02 §3.1)
 ├── test_strategies.py    # strategy library: cross-region induction + boot prior (doc 02 §3.5)
 └── test_properties.py    # Hypothesis property harness — Phase 8 Stage 1 (build-guide §6, item 15)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
-`consolidation.py`, `calibration.py`, `gmp_memory.py`, `contradiction.py`, `strategy.py`.
-Suite: **69 tests** (one is a stateful machine running 10k generated operation sequences).
+`consolidation.py`, `calibration.py`, `contradiction.py`, `strategy.py`. `gmp_bridge.py` maps
+**experiences** (evidence) to GMP facts; there is no CSO-content mirror (doc 03 §3.4 / ADR-0010).
+Suite: **65 tests** (one is a stateful machine running 10k generated operation sequences).
 
 ## Run
 
@@ -121,13 +122,20 @@ Two halves, because each alone misleads:
   facts via `cgr.cosign.v1`, a merged branch. The manufactured trigger is not
   licence to rip the detector out as dead code.
 
-`contested` also reaches the durable tier (GMP): a contested belief is quarantined
-via `valid_until` and drops out of the standard `retrieve` path, with a
-`ccr:mem/contested` marker recording the partner. **This exclusion is conventional,
-not structural** — unlike `superseded_by` (native, single-successor), "contested ⇒
-`valid_until`" is a CCR convention: a consumer reading the **audit view** still
-sees the belief. Tested against a convention-unaware `audit()` consumer, so the
-ceiling is documented, not hidden.
+**Historical note — `contested` and semantic_memory no longer reach GMP.** An earlier
+build (item C + a contested→GMP mirror) persisted committed beliefs to the durable
+tier and quarantined contested ones by a `valid_until` convention. That mirror was
+**removed** per **doc 03 §3.4 / ADR-0010**: the durable tier holds evidence, not CSO
+content; committed beliefs are read from the CSO, never from GMP. The contested
+transitions (`detect_and_mark` / `reconcile_contested`) remain — they are CSO-state
+logic — but they write nothing to GMP.
+
+This also **disposes of the contested→GMP ceiling** the removed mirror carried: the
+"conventional, not structural" exclusion was a real hole (a convention-unaware
+consumer saw a quarantined belief), and it **disappeared with the mirror — it was
+never *solved*.** There is no belief in the durable tier to leak. The rule is now
+guarded by `tests/test_durable_tier.py`, which fails if any component mirrors CSO
+content to GMP.
 
 ### Strategy library (doc 02 §3.5): parallel now, interpose later — **Tier 2 complete**
 
