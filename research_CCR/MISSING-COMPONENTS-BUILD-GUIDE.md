@@ -621,7 +621,7 @@ attack traces for all eleven.
 | 9 | Skills: plans, shadow, promotion | 3.1 | — |
 | 10 | Skills: code sandbox | 3.1 | 9 |
 | 11 | Causal graph: store + attribution — 🟡 **PARTIAL** (`ccr/causal.py`, stage-1 local edges + Q3 why-walk; `tests/test_causal.py`). Open: stages 2–4 emitters | 3.2 | — |
-| 12 | Causal graph: counterfactuals — **OPEN** (§4 confidence propagation, replay-against-`counterfactual_pattern`, Q1/Q2/Q4, admission wiring) | 3.2 | 11 |
+| 12 | Causal graph: counterfactuals — 🟡 **PARTIAL** (PR-A: `replay_edge` stage-1 replay-against-pattern + `chain_confidence` §4 propagation + minimal Q2 + `deprecate_failed_edges`; `tests/test_counterfactual.py`). Open: admission wiring + aggregate cap (PR-B), Q1/Q4, general Q2, stages 2–4 | 3.2 | 11 |
 | 13 | State DAG: parents format + store | 4 | — |
 | 14 | State DAG: merge + validation | 4 | 13 |
 | 15 | Hypothesis property tests (stage 1) — ✅ **BUILT** (`tests/test_properties.py`) | 6 | — |

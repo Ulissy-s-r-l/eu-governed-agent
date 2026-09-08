@@ -106,6 +106,7 @@ def causal_edge(experience: Experience, tx) -> Optional[dict]:
         "attribution_stage": STAGE_LOCAL,
         "counterfactual_pattern": pattern,
         "uncalibrated": True,                        # set precisely at insertion
+        "status": "active",                          # active | deprecated (doc 05 §6)
         "created_tx": tx.tx_id,
         "created_at": tx.created_at,
     }
@@ -151,3 +152,97 @@ def why_believed(causal_graph: dict, outcome_exp_id: str) -> list[dict]:
     propagation and multi-hop chains are the counterfactuals item.)"""
     src = f"cg:outcome:{outcome_exp_id}"
     return [e for e in causal_graph.get("edges", []) if e["from"] == src]
+
+
+# ==========================================================================
+# COUNTERFACTUALS — item 12, PR-A (mitigation only; NO admission change).
+# The gate does not read any of this yet; it is the machinery PR-B will wire.
+# ==========================================================================
+
+REPLAY_EPISODE_OFFSET = 900_000            # deterministic sample range, disjoint from training
+REPLAY_TAU = 0.5                            # anomaly-recurrence threshold: the cause must
+#                                            reproduce the claimed verdict more often than not
+
+
+def scope_for_edge(edge: dict) -> list[str]:
+    """Minimal Q2 (doc 05 §5): the mechanistically-relevant experiences for one
+    stage-1 edge — just its grounded (cited) experience. General subgraph-perturbation
+    Q2 is open (multi-hop); PR-A's replay needs only this."""
+    return [str(edge["from"]).split("cg:outcome:", 1)[-1]]
+
+
+def replay_edge(edge: dict, experience, simulator, *,
+                samples: int = 25, tau: float = REPLAY_TAU) -> dict:
+    """Replay-against-`counterfactual_pattern` (doc 05 §2.3, §6) for a stage-1 local
+    edge: hold the `bias` constant (re-run the cited step's tool in its region) and
+    check whether the `anomaly` (the claimed verdict) recurs. The edge SURVIVES iff
+    the claimed verdict recurs at rate >= tau; otherwise it FAILS — the attribution
+    was spurious (doc 05 §3 stage-4, deviation-aware, made executable).
+
+    This works because the simulator is a ground-truth REFERENCE (doc 07 §2.2a);
+    in a reference-less domain the replay is unbuildable — the same limit as
+    calibration. STATED CEILING (doc 07 laundering row): this tests the cause's
+    PROPENSITY for the anomaly, not INSTANCE causation — in a multi-step trajectory a
+    genuinely-bad step can survive while the specific failure came from upstream. The
+    current single-step simulator cannot construct that case, so a surviving chain
+    here is true; the ceiling is latent, closed only by stages 2-4 + data-flow Q2."""
+    tool = experience.action.steps[-1].tool
+    region = experience.action.policy_region
+    claimed = str(edge["counterfactual_pattern"]["anomaly"]).split("verdict=", 1)[-1].strip()
+    hits = 0
+    for ep in range(REPLAY_EPISODE_OFFSET, REPLAY_EPISODE_OFFSET + samples):
+        res = simulator.run_episode(tool, region, ep)
+        verdict = "success" if res["success"] else "failure"
+        if verdict == claimed:
+            hits += 1
+    recurrence = hits / samples
+    return {"survives": recurrence >= tau, "anomaly_recurrence": round(recurrence, 4),
+            "samples": samples, "tau": tau, "tool": tool, "region": region,
+            "claimed_verdict": claimed}
+
+
+def chain_confidence(edges: list[dict]) -> dict:
+    """Chain confidence (doc 05 §4): `conf(chain) = ∏ conf(e) · ∏ reliability(n)`.
+
+    Ledger-backed nodes have reliability 1.0; the `cause` node's channel reliability
+    is ALREADY folded into `edge["confidence"]` at mint (`insert_edges`:
+    stage_reliability × channel_reliability, or the 0.3 prior when uncalibrated), so
+    the product is over edge confidences — folding it, not re-applying it, which would
+    double-count. The product form penalizes long weak chains (§4).
+
+    UNCALIBRATED GUARANTEE (1B): `uncalibrated = OR(edge.uncalibrated)` — one
+    uncalibrated hop taints the chain so a consumer never reads it as calibrated; and
+    numerically an uncalibrated factor is ≤ the 0.3 prior, so multiplying it in can
+    only LOWER the product. A calibrated neighbour cannot lift it (`0.9 × 0.3 < 0.9`).
+    Laundering-upward is arithmetically impossible AND flagged."""
+    if not edges:
+        return {"confidence": 0.0, "uncalibrated": True}
+    conf = 1.0
+    uncal = False
+    for e in edges:
+        conf *= e["confidence"]                 # channel reliability folded in at mint
+        uncal = uncal or bool(e.get("uncalibrated", False))
+    return {"confidence": round(conf, 6), "uncalibrated": uncal}
+
+
+def deprecate_failed_edges(state, ledger, simulator, *,
+                           samples: int = 25, tau: float = REPLAY_TAU) -> list[str]:
+    """Screen every ACTIVE edge by replay (doc 05 §6) and DEPRECATE the ones that
+    fail — a spurious/forged attribution does not survive. Mirrors §6's chain-bloat
+    discipline: deprecated (not deleted), so it stays auditable. This is graph
+    MAINTENANCE, not admission — the gate reads nothing here (that is PR-B). A failed
+    edge is dropped from the graph's active set; per the approved decision it does NOT
+    auto-reject any candidate — a candidate that cited it is simply judged on its base
+    evidence alone (the uplift it would have granted, in PR-B, is withheld)."""
+    exp_by_id = {e.exp_id: e for e in ledger}
+    deprecated: list[str] = []
+    for edge in state.causal_graph.get("edges", []):
+        if edge.get("status", "active") != "active":
+            continue
+        exp = exp_by_id.get(scope_for_edge(edge)[0])
+        if exp is None:
+            continue
+        if not replay_edge(edge, exp, simulator, samples=samples, tau=tau)["survives"]:
+            edge["status"] = "deprecated"
+            deprecated.append(edge["edge_id"])
+    return deprecated
