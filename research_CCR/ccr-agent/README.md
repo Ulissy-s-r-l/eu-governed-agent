@@ -72,13 +72,14 @@ tests/
 ├── test_strategies.py    # strategy library: cross-region induction + boot prior (doc 02 §3.5)
 ├── test_causal.py        # causal graph: attributed edges, store + stage-1 (doc 02 §3.7, doc 05)
 ├── test_counterfactual.py # replay-against-pattern + propagation, item 12 PR-A (doc 05 §4/§6)
+├── test_admission_causal.py # gate consumes bounded causal uplift, item 12 PR-B (cap X=0.05)
 └── test_properties.py    # Hypothesis property harness — Phase 8 Stage 1 (build-guide §6, item 15)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
 `consolidation.py`, `calibration.py`, `contradiction.py`, `strategy.py`, `causal.py`.
 `gmp_bridge.py` maps the §3.2 **evidence** kinds (experience, gate_decision, checkpoint) to
 GMP facts; there is no CSO-content mirror (doc 03 §3.4 / ADR-0010).
-Suite: **80 tests** (one is a stateful machine running 10k generated operation sequences).
+Suite: **86 tests** (one is a stateful machine running 10k generated operation sequences).
 
 ## Run
 
@@ -192,17 +193,24 @@ copies.
 - **Q3 why-walk** (`why_believed`) closes doc 03 §6's `causal_basis → cg-edge` hop, and
   resolves **on the durable tier** via a new `ccr:gate_decision/caused` fact (subject =
   tx_id — never a CSO id; the durable-tier guard stays green).
-- **Counterfactuals (guide item 12) — PR-A landed, PR-B pending.** `ccr/causal.py` now
-  has **`replay_edge`** (stage-1 replay-against-`counterfactual_pattern` — a forged chain
-  must reproduce its anomaly or it is deprecated), **`chain_confidence`** (doc 05 §4
-  product, uncalibrated flag-OR + 0.3 floor so an uncalibrated edge is never laundered
-  upward), **minimal Q2** (`scope_for_edge`), and **`deprecate_failed_edges`**. **The gate
-  still reads none of this** — admission consumption is **PR-B**, which ships only because
-  the replay mitigation now exists (the two **ship together or neither does**; a fabricated
-  chain is `attribution laundering`, doc 07). **Replay's stated ceiling** (doc 07 row): it
-  tests *propensity*, not *instance* causation — a multi-step surviving-false chain is the
-  gap stages 2–4 close. **Still open:** admission wiring + the aggregate cap (PR-B),
-  queries Q1/Q4, stages 2–4, general (multi-hop) Q2.
+- **Counterfactuals (guide item 12) — PR-A + PR-B landed.** `ccr/causal.py` has
+  **`replay_edge`** (stage-1 replay-against-`counterfactual_pattern` — a forged chain must
+  reproduce its anomaly or it is deprecated), **`chain_confidence`** (doc 05 §4 product;
+  uncalibrated flag-OR + 0.3 floor ⇒ never laundered upward), **minimal Q2**
+  (`scope_for_edge`), **`deprecate_failed_edges`**, and **`admission_uplift`**. **The gate
+  now reads the graph** (PR-B): a **surviving, calibrated** chain grounding the cited
+  evidence adds a **bounded uplift** to V, **added and clamped in aggregate at X=0.05**
+  (`AdmissionGate.causal_uplift_cap`, `< the honest margin 0.145` — causal evidence nudges,
+  never decides). **Failed/uncalibrated chains add zero** (not a floor); **support (roots)
+  is never inflated** (I6 — causal provenance is structure *over* existing evidence). The
+  **cap is the safety bound** (correlated or independent, a campaign moves V by ≤ X on one
+  decision); **γ** (`CAUSAL_GAMMA=0.1`) only sizes typical influence. Wired only when the
+  engine has a `replayer`; without one the gate reads no uplift. **Replay's stated ceiling**
+  (doc 07 row): it tests *propensity*, not *instance* causation — the multi-step
+  surviving-false gap stages 2–4 close. **Budget caveats (doc 07):** the bound is
+  per-decision not per-campaign (§2.5), and the aggregate cap makes the "one-root"
+  correlated-forgery cost a footnote, not a vulnerability. **Still open:** stages 2–4
+  emitters, queries Q1/Q4, general (multi-hop) Q2.
 
 `ccr/demo_transactions.py` proves the three properties that differentiate CCR
 (none of which require the agent to be good at anything):

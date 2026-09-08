@@ -31,7 +31,7 @@ from .calibration import (
     reliability_from_state, recompute_reliability, REFERENCE_RELIABILITY,
 )
 from .contradiction import detect_and_mark, reconcile_contested
-from .causal import insert_edges
+from .causal import insert_edges, admission_uplift
 from . import cosign
 
 
@@ -111,17 +111,25 @@ class AdmissionGate:
     """
 
     def __init__(self, threshold: float = 0.55, min_evidence: int = 3,
-                 w_trust: float = 0.5, w_info: float = 0.2):
+                 w_trust: float = 0.5, w_info: float = 0.2,
+                 causal_uplift_cap: float = 0.05):
         self.threshold = threshold
         self.min_evidence = min_evidence
         self.w_trust, self.w_info = w_trust, w_info
         self.ceiling = w_trust + w_info            # 0.70 with the defaults
+        # doc 05 §6 / item 12 PR-B: the AGGREGATE cap on causal uplift per decision —
+        # the SAFETY BOUND. Σ causal ΔV is clamped here regardless of caller, so no
+        # bug or laundering campaign can move V by more than this. 0.05 < the honest
+        # margin (0.695−0.55=0.145), so causal evidence can NUDGE a borderline
+        # candidate but never carry one across the threshold on its own. γ (in
+        # ccr.causal) sizes typical influence; THIS cap is what bounds the attacker.
+        self.causal_uplift_cap = causal_uplift_cap
         assert threshold < self.ceiling, (
             f"threshold {threshold} >= two-term ceiling {self.ceiling}: nothing admits")
 
     def evaluate_evidence(self, evidence: list[Experience], *,
                           corroborating: Optional[list[list[str]]] = None,
-                          reliability_of=None) -> dict:
+                          reliability_of=None, causal_uplift: float = 0.0) -> dict:
         """Score a set of supporting experiences for a candidate update.
 
         `corroborating` (I6, doc 01 Def. 7.4a): exp_id groups of any *cited*
@@ -141,13 +149,20 @@ class AdmissionGate:
         never from a live `CalibrationLoop`. A live loop's numbers reach the gate
         only after a committed `recalibrate` tx writes them into `evaluation_history`.
         The parameter remains here for direct unit-testing of the scorer; the
-        engine does not let a caller inject a live loop."""
+        engine does not let a caller inject a live loop.
+
+        `causal_uplift` (item 12 PR-B, doc 05): a bounded corroboration from surviving,
+        calibrated causal chains grounding the cited evidence — computed by the engine
+        (`ccr.causal.admission_uplift`), NOT read here. It is added to V and CLAMPED to
+        `causal_uplift_cap` (the aggregate safety bound), and it does NOT touch support
+        `n` (I6: causal provenance is structure OVER existing evidence, not new
+        evidence). Failed/uncalibrated chains contribute 0 upstream, never a floor."""
         if not evidence:
             return {"V": 0.0, "admit": False, "reason": "no evidence"}
         groups = [[e.exp_id for e in evidence]]
         if corroborating:
             groups.extend(corroborating)
-        n = len(root_support(*groups))            # I6: deduped independent roots
+        n = len(root_support(*groups))            # I6: deduped independent roots (uplift never changes this)
         if reliability_of is not None:
             trusts = []
             for e in evidence:
@@ -159,12 +174,17 @@ class AdmissionGate:
             trust = sum(e.evaluation.confidence for e in evidence) / len(evidence)
         info = sum(e.evaluation.score for e in evidence) / len(evidence)
         support = min(1.0, n / self.min_evidence)
-        V = (self.w_trust * trust + self.w_info * info) * support
+        base_V = (self.w_trust * trust + self.w_info * info) * support
+        # aggregate cap enforced HERE (the safety bound): Σ causal ΔV ≤ causal_uplift_cap,
+        # so no caller/bug/campaign can move V by more than the cap.
+        uplift = min(max(causal_uplift, 0.0), self.causal_uplift_cap)
+        V = base_V + uplift
         admit = V >= self.threshold and n >= self.min_evidence
         return {"V": round(V, 4), "threshold": self.threshold, "admit": admit,
                 "trust": round(trust, 4), "info": round(info, 4),
                 "support": round(support, 4), "ceiling": self.ceiling, "n": n,
-                "roots": n}
+                "roots": n, "base_V": round(base_V, 4),
+                "causal_uplift": round(uplift, 6)}
 
 
 # --------------------------------------------------------------------------
@@ -176,16 +196,31 @@ class LearningEngine:
     The ONLY writer of behavioral state (doc 00 §6.9)."""
 
     def __init__(self, ledger: ExperienceLedger, gate: Optional[AdmissionGate] = None,
-                 replay_tolerance: float = 0.05):
+                 replay_tolerance: float = 0.05, replayer=None):
         self.ledger = ledger
         self.gate = gate or AdmissionGate()
         self.replay_tolerance = replay_tolerance
         self.transactions: list[TransactionRecord] = []
+        # item 12 PR-B: the environment used to replay a causal edge's bias at
+        # admission (a simulator-like object with run_episode). When None (default),
+        # the gate reads NO causal uplift — behaviour is exactly the non-consumption
+        # era. A causal chain reaches the gate only through this replayer, and only if
+        # it SURVIVES replay and is calibrated (ccr.causal.admission_uplift).
+        self.replayer = replayer
         # NB (doc 03 §3.4 / ADR-0010): the engine does NOT mirror CSO content
         # (semantic_memory, policies, strategies, evaluation_history) to the durable
         # tier. Committed beliefs live in the CSO and are linked to the ledger by
         # provenance; they are never copied into GMP. The removed `memory_store`
         # belief-mirror (old gmp_memory.py) was an undocumented divergence from §3.3.
+
+    def _causal_uplift(self, state: CognitiveState, evidence: list[Experience]) -> float:
+        """Raw (uncapped) causal corroboration for a candidate citing `evidence`
+        (item 12 PR-B). 0.0 when no replayer is wired — the non-consumption era. The
+        gate applies the aggregate safety cap."""
+        if self.replayer is None:
+            return 0.0
+        return admission_uplift(state.causal_graph, evidence, self.replayer,
+                                w_trust=self.gate.w_trust)
 
     # -- propose (doc 04 stage 4) -------------------------------------------
 
@@ -288,7 +323,8 @@ class LearningEngine:
         a valid approver signature is REJECTED at validation, not committed. The
         system signature is computed LAST, over the whole record including the
         approver signature (nested)."""
-        admission = self.gate.evaluate_evidence(evidence)
+        admission = self.gate.evaluate_evidence(
+            evidence, causal_uplift=self._causal_uplift(state, evidence))
         tx = TransactionRecord(tx_id=new_id("tx"), tx_type="learn",
                                parent_state=state.commitment, status="rejected",
                                admission=admission, validation={}, delta=None,
@@ -414,7 +450,9 @@ class LearningEngine:
         `CalibrationLoop` cannot steer this gate; only a committed `recalibrate`
         tx can move these numbers."""
         reliability_of = reliability_from_state(state.evaluation_history)
-        admission = self.gate.evaluate_evidence(evidence, reliability_of=reliability_of)
+        admission = self.gate.evaluate_evidence(
+            evidence, reliability_of=reliability_of,
+            causal_uplift=self._causal_uplift(state, evidence))
         sources = [e.exp_id for e in evidence]
         tx = TransactionRecord(
             tx_id=new_id("tx"), tx_type="learn", parent_state=state.commitment,
@@ -499,7 +537,9 @@ class LearningEngine:
         admission (e.g. low-trust forged self-reports) is REJECTED at the gate,
         with the rejection recorded."""
         reliability_of = reliability_from_state(state.evaluation_history)
-        admission = self.gate.evaluate_evidence(evidence, reliability_of=reliability_of)
+        admission = self.gate.evaluate_evidence(
+            evidence, reliability_of=reliability_of,
+            causal_uplift=self._causal_uplift(state, evidence))
         sources = sorted({e.exp_id for e in evidence})
         tx = TransactionRecord(
             tx_id=new_id("tx"), tx_type="learn", parent_state=state.commitment,
