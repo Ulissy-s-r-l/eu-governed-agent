@@ -5,9 +5,10 @@ Covers: (a) an attributed edge commits with its citing tx and lands in the new s
 (c) attributed_by is DERIVED — a caller-supplied value is structurally unrepresentable
 (no such parameter), a self-report source cannot be labelled `evaluator`, and an edge
 from an uncalibrated channel is flagged; (d) the Q3 why-walk resolves on the durable
-tier through the new `ccr:gate_decision/caused` fact; (e) the edge is NOT consumed by
-admission — the gate's decision is identical with and without the graph. Plus the
-standing injection probes against the new caused mapping.
+tier through the new `ccr:gate_decision/caused` fact; (e) as of item 12 PR-B the gate
+DOES consume the graph — a surviving, calibrated chain moves V by a bounded amount
+(the (e)-guard, inverted from its non-consumption form). Plus the standing injection
+probes against the new caused mapping.
 """
 import inspect
 import json
@@ -165,17 +166,37 @@ def test_why_walk_resolves_on_the_durable_tier(tmp_path):
         "attributed cause's experience not on the durable tier"
 
 
-# ---- (e) the edge is NOT consumed by admission ----------------------------
+# ---- (e) INVERSION — the non-consumption era ends here (item 12 PR-B) ------
+# Formerly `test_graph_does_not_change_the_gate_decision`, correct ONLY while causal
+# edges were unconsumed. As of item 12 PR-B the gate READS the graph: a surviving,
+# calibrated chain grounding the cited evidence moves V by a BOUNDED amount. This
+# inversion is the visible signature that the non-consumption era ended, deliberately.
 
-def test_graph_does_not_change_the_gate_decision(tmp_path):
-    ledger, capture, engine, state, _ = _rig(tmp_path)
-    fresh = _emit(capture, ledger, REGIONS[2], "code_runner", 1.0, 4)
-    admit_empty = engine.gate.evaluate_evidence(fresh)       # graph empty
-    # populate the graph via an unrelated commit
-    _, ns = _learn(engine, ledger, capture, state, REGIONS[0])
-    assert ns.causal_graph["edges"], "graph did not populate — test would be vacuous"
-    admit_full = engine.gate.evaluate_evidence(fresh)        # graph populated
-    assert admit_empty == admit_full                         # gate never read the graph
+def test_graph_changes_the_gate_decision_when_consumed(tmp_path):
+    from ccr.simulator import ToolSelectionSimulator
+    priv, _ = generate_keypair()
+    ledger = ExperienceLedger(LocalLedgerBackend(tmp_path / "l.jsonl"), priv, checkpoint_every=64)
+    capture = ExperienceCapture(ledger, SimulatorGroundTruthEvaluator())
+    sim = ToolSelectionSimulator(TOOLS, REGIONS, seed=7)
+    engine = LearningEngine(ledger, AdmissionGate(), replayer=sim)   # the gate can now read the graph
+    state = CognitiveState.genesis(REGIONS, TOOLS)
+    region = max(REGIONS, key=lambda r: max(sim.reliability(t, r) for t in TOOLS))
+    best = max(TOOLS, key=lambda t: sim.reliability(t, region))
+    assert sim.reliability(best, region) >= 0.5                      # success chain survives replay
+
+    ev = _emit(capture, ledger, region, best, 1.0, 1)              # best tool, success
+    e = ev[0]
+    state.causal_graph["edges"] = [{                                # surviving, calibrated chain
+        "edge_id": "cg-edge:surv", "rel": "attributed-to",
+        "from": f"cg:outcome:{e.exp_id}", "to": f"cg:cause:{e.exp_id}",
+        "confidence": 0.85, "attributed_by": f"evaluator:{REF}", "attribution_stage": "local",
+        "counterfactual_pattern": {"bias": "x", "anomaly": "verdict=success"},
+        "uncalibrated": False, "status": "active", "created_tx": "tx:e", "created_at": "t"}]
+    base = engine.gate.evaluate_evidence(ev)
+    consumed = engine.gate.evaluate_evidence(ev, causal_uplift=engine._causal_uplift(state, ev))
+    dv = consumed["V"] - base["V"]
+    assert dv > 0                                                   # the gate now reads the graph
+    assert dv <= engine.gate.causal_uplift_cap + 1e-9              # bounded by the aggregate cap
 
 
 # ---- injection probes: the durable-tier guard still BITES ------------------
