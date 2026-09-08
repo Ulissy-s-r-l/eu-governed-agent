@@ -67,15 +67,18 @@ tests/
 ├── test_consolidation.py # consolidation (§2.1a/d) + I6 support independence
 ├── test_calibration.py   # per-channel reliability + recalibrate tx (doc 07 §2.2a, doc 04 §5B)
 ├── test_gmp_memory.py    # GMP memory persistence; native supersede + contested→GMP (doc 02 §3.1)
-└── test_contradiction.py # contradiction detection → contested status (doc 02 §3.1)
+├── test_contradiction.py # contradiction detection → contested status (doc 02 §3.1)
+└── test_properties.py    # Hypothesis property harness — Phase 8 Stage 1 (build-guide §6, item 15)
 ```
 Also in `ccr/`: `cosign.py` (co-signature envelope), `support.py` (I6 `root_support`),
-`consolidation.py`, `calibration.py`, `gmp_memory.py`, `contradiction.py`. Suite: **63 tests**.
+`consolidation.py`, `calibration.py`, `gmp_memory.py`, `contradiction.py`. Suite: **64 tests**
+(the last is a stateful machine running 10k generated operation sequences).
 
 ## Run
 
 ```bash
 pip install grafomem structlog numpy cryptography   # runtime deps
+pip install hypothesis                               # property harness (tests/test_properties.py)
 python ccr/demo_phase1.py
 python -m pytest tests/test_phase1.py -v
 ```
