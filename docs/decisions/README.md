@@ -17,8 +17,9 @@ source of truth for its state.
 | [0007](ADR-0007-cgr-governance-domain.md) | CGR governance domain + backfill (relocated to Foundation) | **Relocated** → `GNS-Foundation/grafomem` docs/decisions/0002 | — |
 | [0008](ADR-0008-b3-best-client-of-general-ledger.md) | B3 is built as the best possible client of a general ledger | Accepted | 2026-08-31 |
 | [0009](ADR-0009-b3-level-2-governed-assistant-no-correctness-signal.md) | B3 is a Level 2 governed assistant; AML does not emit a correctness signal | Accepted | 2026-09-06 |
+| [0010](ADR-0010-durable-tier-holds-evidence-not-cso-content.md) | The durable tier holds evidence, not CSO content (GMP mirror rule) | Accepted | 2026-09-08 |
 
-*Numbering: `0007` is skipped-in-place — it was used and relocated to the Foundation. Numbers are permanent; `0009` is the next record.*
+*Numbering: `0007` is skipped-in-place — it was used and relocated to the Foundation. Numbers are permanent; `0011` is the next record.*
 
 ## Format
 
