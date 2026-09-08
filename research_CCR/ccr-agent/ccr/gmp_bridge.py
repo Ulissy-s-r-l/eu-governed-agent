@@ -1,16 +1,32 @@
-"""GMP bridge — map CCR experiences into GRAFOMEM GMP v0.2 durable facts.
+"""GMP bridge — map CCR EVIDENCE into GRAFOMEM GMP v0.2 durable facts.
 
 GMP atom: fact = (predicate, subject, object, valid_from), tenant-scoped,
 content-derived identity  fact_id = BLAKE2b-128(tenant ‖ P ‖ S ‖ O ‖ valid_from).
 
-Mapping (doc 03 → GMP):
-  subject    = exp_id          (the experience is the subject of discourse)
-  predicate  = a fact aspect   (goal / action / outcome / evaluation / provenance)
-  object     = the aspect payload (JSON)
-  valid_from = captured_at     (event time — bi-temporal ready)
+The bridge maps the doc 03 §3.2 EVIDENCE record kinds — and only those. Per doc 03
+§3.4 / ADR-0010 the durable tier holds evidence, never CSO content:
 
-One experience becomes a small constellation of facts, so GMP's native
-supersession (evaluation updates) and audit operations apply per aspect.
+  experience   → constellation: subject = exp_id, predicate = aspect
+                 (goal/context/action/outcome/evaluation/provenance).
+  gate_decision→ subject = tx_id, predicate "ccr:gate_decision", object = the
+                 admission/validation audit (§3.2 "auditable, including its
+                 refusals"); plus a "ccr:gate_decision/on" link naming the tx's
+                 cited exp_ids so the three-way join (experience ↔ gate_decision ↔
+                 policy provenance) resolves ON THE DURABLE TIER, not only locally.
+  checkpoint   → subject = checkpoint_id, predicate "ccr:checkpoint", object =
+                 {merkle_root, seq range, signature ref}.
+  annotation   → NOT mapped. Nothing writes an annotation record today (ledger.py:
+                 "not yet needed in Phase 1"); designing a mapping for a phantom is
+                 exactly the CSO-content-mirror mistake in a different costume. Add
+                 it when a writer exists.
+
+THE LINE BETWEEN EVIDENCE AND MIRROR (the rule that keeps this on the right side of
+ADR-0010): a gate_decision's `delta` may contain a strategy ordering or a policy
+distribution. That is **evidence about a change** and belongs in the OBJECT of the
+gate_decision fact. The SUBJECT stays the `tx_id` — never a CSO component id — and no
+predicate is `ccr:mem/*`. A fact whose subject is a mem/policy/strategy/channel id, or
+whose predicate mirrors a belief, is a CSO mirror (item C) and is forbidden;
+`tests/test_durable_tier.py` guards this.
 """
 
 from __future__ import annotations
@@ -79,6 +95,57 @@ def experience_to_facts(exp: Experience, tenant_id: str = GMP_DEFAULT_TENANT) ->
     return facts
 
 
+def gate_decision_to_facts(payload: dict,
+                           tenant_id: str = GMP_DEFAULT_TENANT) -> list[GMPFact]:
+    """A gate_decision record → its audit fact (§3.2 "auditable, including its
+    refusals") plus, when the tx cited evidence, a `ccr:gate_decision/on` link
+    naming the cited exp_ids. Subject is always the tx_id — the delta's CSO content
+    (a distribution, a strategy ordering) rides in the OBJECT as evidence about the
+    change, never as a subject or a belief predicate (doc 03 §3.4 / ADR-0010)."""
+    tx_id = payload["tx_id"]
+    vf = payload.get("created_at", "")
+    delta = payload.get("delta") or {}
+    audit = {
+        "tx_type": payload.get("tx_type"),
+        "status": payload.get("status"),
+        "admission": payload.get("admission"),           # verdict + component values
+        "validation_verdict": (payload.get("validation") or {}).get("verdict"),
+        "parent_state": payload.get("parent_state"),
+        "new_commitment": payload.get("new_commitment"),  # None for a rejected tx
+        "delta": delta,                                  # what changed — EVIDENCE about the
+    }                                                     # change (may hold a distribution/
+    #                                                     ordering); the subject stays tx_id.
+    facts = [GMPFact(predicate="ccr:gate_decision", subject=tx_id,
+                     obj=canonical_json(audit).decode(), valid_from=vf,
+                     tenant_id=tenant_id, importance=0.9)]
+    # cited evidence: policy commits carry `justification`; memory/strategy carry
+    # `sources`. Present on rejections too (both set delta before the gate check),
+    # so the join resolves for what the system DECLINED to learn, not only commits.
+    cited = delta.get("justification") or delta.get("sources") or []
+    if cited:
+        facts.append(GMPFact(predicate="ccr:gate_decision/on", subject=tx_id,
+                             obj=canonical_json(sorted(cited)).decode(), valid_from=vf,
+                             tenant_id=tenant_id, importance=0.9))
+    return facts
+
+
+def checkpoint_to_fact(payload: dict,
+                       tenant_id: str = GMP_DEFAULT_TENANT) -> GMPFact:
+    """A checkpoint record → one anchoring fact (§5.2). Subject = checkpoint_id."""
+    obj = {
+        "merkle_root": payload.get("merkle_root"),
+        "tip_chain_root": payload.get("tip_chain_root"),
+        "seq_lo": payload.get("seq_lo"),
+        "seq_hi": payload.get("seq_hi"),
+        "signature": payload.get("signature"),           # signature ref (evidence, public)
+        "key_id": payload.get("key_id"),
+    }
+    return GMPFact(predicate="ccr:checkpoint", subject=payload["checkpoint_id"],
+                   obj=canonical_json(obj).decode(), valid_from=payload.get("created_at", ""),
+                   tenant_id=tenant_id, importance=0.95,
+                   sequence=payload.get("seq_hi", 0))
+
+
 class GMPInMemoryBackend:
     """Minimal in-memory GMP-style store: write / retrieve / audit / flush /
     supersede, with tenant scoping. Used to test the bridge without a server;
@@ -134,9 +201,10 @@ class GMPInMemoryBackend:
 
 
 class GMPFactBridge(LedgerBackend):
-    """LedgerBackend fan-out: every appended experience also lands in a GMP
-    store as a fact constellation. Read path stays on the local ledger;
-    GMP is the durable, queryable, tenant-scoped evidence tier."""
+    """LedgerBackend fan-out: every appended EVIDENCE record (experience,
+    gate_decision, checkpoint — doc 03 §3.2) also lands in a GMP store as facts.
+    Read path stays on the local ledger; GMP is the durable, queryable,
+    tenant-scoped evidence tier. CSO content is never mirrored (doc 03 §3.4)."""
 
     def __init__(self, store: GMPInMemoryBackend):
         self.store = store
@@ -144,10 +212,16 @@ class GMPFactBridge(LedgerBackend):
 
     def append(self, line: str) -> None:
         entry = LedgerEntry.from_line(line)
-        if entry.kind != "experience":
-            return
-        exp = Experience.from_dict(entry.payload)
-        for f in experience_to_facts(exp, tenant_id=self.store.tenant_id):
+        if entry.kind == "experience":
+            facts = experience_to_facts(
+                Experience.from_dict(entry.payload), tenant_id=self.store.tenant_id)
+        elif entry.kind == "gate_decision":
+            facts = gate_decision_to_facts(entry.payload, tenant_id=self.store.tenant_id)
+        elif entry.kind == "checkpoint":
+            facts = [checkpoint_to_fact(entry.payload, tenant_id=self.store.tenant_id)]
+        else:
+            return                                    # annotation: no writer today
+        for f in facts:
             self.store.write(f)
             self.facts_written += 1
 
