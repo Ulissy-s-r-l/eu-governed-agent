@@ -10,6 +10,12 @@ Phase 1 of the CCR roadmap: **prove that agent execution can be converted into
 structured, evaluated, provenance-sealed experience** — the substrate every later
 phase (adaptive memory, policy learning, learning transactions) builds on.
 
+> **Learning is reference-relative (ADR-0011):** every learning claim ships with a named reference, and
+> the space partitions into four tiers (A mechanical / B named-human / C sparse / D frozen); weight
+> plasticity, if ever, is a gated offline revertable transaction, never an online reflex
+> (ADR-weight-plasticity-gated-offline-transaction, proposed). Both are documentation until build-guide
+> item 19 (the Reference Registry) enforces the tiers.
+
 ```
 Agent loop (tool-selection simulator)
    │  emit: state / goal / action / outcome

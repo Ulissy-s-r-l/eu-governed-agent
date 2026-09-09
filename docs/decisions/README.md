@@ -18,8 +18,19 @@ source of truth for its state.
 | [0008](ADR-0008-b3-best-client-of-general-ledger.md) | B3 is built as the best possible client of a general ledger | Accepted | 2026-08-31 |
 | [0009](ADR-0009-b3-level-2-governed-assistant-no-correctness-signal.md) | B3 is a Level 2 governed assistant; AML does not emit a correctness signal | Accepted | 2026-09-06 |
 | [0010](ADR-0010-durable-tier-holds-evidence-not-cso-content.md) | The durable tier holds evidence, not CSO content (GMP mirror rule) | Accepted | 2026-09-08 |
+| [0011](ADR-0011-verifier-tier-decomposition.md) | "Did the agent learn?" is well-posed only against a named reference: the four-tier decomposition (refines 0009) | Accepted | 2026-09-09 |
 
-*Numbering: `0007` is skipped-in-place — it was used and relocated to the Foundation. Numbers are permanent; `0011` is the next record.*
+*Numbering: `0007` is skipped-in-place — it was used and relocated to the Foundation. Numbers are permanent; `0012` is the next record.*
+
+## Proposed (unnumbered — number assigned on acceptance)
+
+Proposed records are titled by **slug**, with **no number reserved** (assigning a number before
+acceptance re-creates the cross-repo numbering ambiguity — `GNS-Foundation/grafomem` already has an
+in-flight `0011`). On acceptance, the record takes the next free number and moves into the table above.
+
+| Slug | Title | Status | Decision date |
+|---|---|---|---|
+| [weight-plasticity-gated-offline-transaction](ADR-weight-plasticity-gated-offline-transaction.md) | Weight plasticity is a gated, offline, revertable transaction — never an online reflex (pairs with 0011) | Proposed | — |
 
 ## Format
 

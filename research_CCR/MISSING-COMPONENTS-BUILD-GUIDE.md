@@ -40,6 +40,18 @@ policy entry back to its justifying evidence. That is what a supervisor asks for
 that hardens the gate has value independent of whether the agent ever learns anything** — read the build
 order in that light.
 
+**3. Every learning claim ships with its reference named (ADR-0011).** "Did the agent learn?" is
+well-posed only against a reference, and the space partitions into four tiers by reference availability
+— A (mechanical oracle), B (named human reference), C (sparse outcomes), D (frozen dispositions,
+*undefined-not-zero*). This is **documentation, not constraint, until item 19 (the Reference Registry)**
+enforces it — a class-D signal cannot produce a reliability only once the registry is built.
+
+**4. CCR's answer to lifelong learning is the governed release, not the plastic layer**
+(ADR-weight-plasticity-gated-offline-transaction, proposed). Weight plasticity, if it ever happens, is a
+gated offline revertable transaction with a Tier-A reference and a `cgr.cosign.v1` co-signature — never
+an online reflex. The online path is inadmissible by construction (no reference at reflex timescale;
+weights are undiffable).
+
 ---
 
 ## 1. Status snapshot: the 14 CSO components
@@ -628,6 +640,8 @@ attack traces for all eleven.
 | 16 | **Phase 7A — port existing authority machinery** | **§5 / C** | 13 |
 | 17 | Phase 7B — GNS identity layer | 5 | 16, 0005, 0008, 0009 gap 3a |
 | 18 | ProVerif model (stage 2) | 6 | 15, 16 |
+| 19 | **Reference Registry** — every learnable signal declares its class (A/B/C/D) and its reference **at registration**; a class-D signal **cannot produce a reliability** (enforced once built, not merely documented) | ADR-0011 | 6 |
+| 20 | **Distillation path** (ledger → corpus → weight admission as transaction) — *horizon, post-Tier-3*; two admissible corpus sources (gate-passed Tier-A/B experience; supervised-constructed non-experience), Tier-D through neither | ADR-weight-plasticity-gated-offline-transaction | 5, 6, 15, 19, ADR-0011 (Tier-A) |
 
 Items 3 and 6 are placed early deliberately: both close the "trust the channel, not the account"
 standing rule below, and both have value whether or not anything later is built.
