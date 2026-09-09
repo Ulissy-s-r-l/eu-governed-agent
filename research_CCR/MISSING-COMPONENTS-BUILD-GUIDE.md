@@ -392,8 +392,8 @@ an engineering problem with four parts:
 **(a) Node/edge store inside the CSO.** The `CausalEdge` placeholder grows to the full
 doc-05 schema: node types `goal | strategy | action | outcome | cause | learning`;
 edge types including `attributed-to` (the consequential one), with `attributed_by`
-taking one of CHIEF's four stages — `local`, `planning-control`, `data-flow`,
-`deviation-aware` — whose stage sets the edge's initial confidence (a `local`
+taking one of our four stages — `local`, `planning-control`, `data-flow`,
+`deviation-aware` (our decomposition, adapted from CHIEF's screening machinery) — whose stage sets the edge's initial confidence (a `local`
 attribution from a deterministic test outranks a `planning-control` attribution from an
 LLM critic). Storage: edge list in the CSO plus an adjacency index rebuilt on load
 (the index is derived, so it lives outside the commitment). ~1.5 days.
@@ -431,7 +431,7 @@ the graph explains is not surprising); (ii) validation uses (c) for policy and s
 candidates. ~2 days.
 
 **Acceptance:** `tests/test_causal.py` — evaluator attributions produce edges whose
-confidence ordering matches the CHIEF stage ordering; contrast pairs from the simulator
+confidence ordering matches our four-stage ordering; contrast pairs from the simulator
 (the ground truth is known!) recover the true cause as the highest-confidence edge;
 a chain of three weak edges (0.5³) yields path confidence ≤ 0.125; no edge exists that
 did not come through a commit.
