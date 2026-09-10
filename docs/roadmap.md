@@ -132,6 +132,27 @@ mechanism as a Foundation record.
 conversation is building against an unvalidated premise — the workflow shape
 should absorb what that conversation returns.
 
+### Which tiers B3 claims (ADR-0011)
+
+Per [ADR-0011](decisions/ADR-0011-verifier-tier-decomposition.md), every B3 learning claim ships with
+its reference named, and the workflow spans three tiers:
+
+- **Tier A (verifiable by construction)** — the mechanical steps: ingest/normalize (against schema),
+  analyst cosign (`cgr.cosign.v1` verification — *verify-only, no learnable signal*), and the audit
+  walk (chain + three-way join — *verify-only*). Learning claims here are real.
+- **Tier B (human-as-reference)** — the judgment steps: evidence assembly (against the bank's written
+  checklist) and disposition **drafting form** (against the bank's narrative standard and the
+  reviewer's *written return reasons*). Governance-reporting format, plus the FIU's report-quality
+  feedback as **sparse Tier B**. A declining override rate is an **alarm, not a KPI**.
+- **Tier D (no claim)** — **disposition correctness.** B3 makes **no** learning or accuracy claim
+  about whether a disposition is right; it MUST NOT learn analyst disposition tendencies. This is the
+  Tier-D property of the domain established in [ADR-0009](decisions/ADR-0009-b3-level-2-governed-assistant-no-correctness-signal.md).
+
+**Until the Reference Registry (build-guide item 19) enforces these tiers, the tier claim is internal;
+the bank-facing claim remains ADR-0009's "no learning or accuracy claim."** The normative per-step
+classification lives in the B3 product-definition doc (item 6), which supersedes ADR-0011's
+illustrative appendix.
+
 ---
 
 ## P4 — B0.1–B0.6, the DORA pack
