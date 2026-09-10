@@ -19,8 +19,11 @@ source of truth for its state.
 | [0009](ADR-0009-b3-level-2-governed-assistant-no-correctness-signal.md) | B3 is a Level 2 governed assistant; AML does not emit a correctness signal | Accepted | 2026-09-06 |
 | [0010](ADR-0010-durable-tier-holds-evidence-not-cso-content.md) | The durable tier holds evidence, not CSO content (GMP mirror rule) | Accepted | 2026-09-08 |
 | [0011](ADR-0011-verifier-tier-decomposition.md) | "Did the agent learn?" is well-posed only against a named reference: the four-tier decomposition (refines 0009) | Accepted | 2026-09-09 |
+| [0012](ADR-0012-grafomem-cloud-is-an-ulissy-product-mark-licensed.md) | GRAFOMEM Cloud is an Ulissy product; the Foundation retains the standard and licenses the "Grafomem" mark for "GRAFOMEM Cloud" | Accepted | 2026-09-10 |
 
-*Numbering: `0007` is skipped-in-place — it was used and relocated to the Foundation. Numbers are permanent; `0012` is the next record.*
+*Numbering: `0007` is skipped-in-place — it was used and relocated to the Foundation. Numbers are permanent; `0013` is the next record.*
+
+*Before taking a number, **check open PRs, not just `main`**. `0012` was first written as `0011` against a `main` that did not yet contain it: the number was already claimed by an unmerged PR, and the collision only surfaced at merge time. `main` is not the whole namespace — the in-flight records are part of it.*
 
 ## Proposed (unnumbered — number assigned on acceptance)
 
