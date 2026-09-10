@@ -180,6 +180,13 @@ database. The rollback is a Railway redeploy of the previous good commit.
   (ADR-0002, ADR-0004) that is a live question, not a deployment detail. Options: a Railway EU
   region; an EU deployment offered on Enterprise only; or both, with the default following the
   customer. **Operator decides — not acted on.**
+- **Erasure-ledger incident, 2026-09-10.** The GDPR erasure ledger was found empty (0 rows against
+  27 certificates, 14 of them signed after the ledger write shipped), its pool unable to
+  authenticate, and the ledger co-located with the database it exists to survive. Full record:
+  `grafomem-internal` → `incidents/2026-09-10-erasure-ledger.md`. The restore-independence claim is
+  withdrawn from the public docs, dated, until the ledger is relocated; relocation options
+  (second Postgres service / WORM object store / withdraw permanently) are an operator decision to
+  be taken **jointly with the data-residency question below**.
 - **The SIEM exporter has no destination.** `grafomem-deamon` runs `SiemExporter` alongside the
   erasure sweeper, and `SIEM_WEBHOOK_URL` is **unset** on that service — so audit events are
   exported nowhere. For a product whose pitch rests on auditability, where those events are meant to
