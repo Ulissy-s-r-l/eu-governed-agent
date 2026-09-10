@@ -143,6 +143,25 @@ reality is only half a record, and because this line was first drafted wrongly (
 
 To be **corrected visibly here** when the gate moves to `/readyz`.
 
+### Promotion model — decided 2026-09-10
+
+**Production stays on `main` with auto-deploy. `grafomem-staging` tracks `main` as a mirror, not a
+gate.** A merge to `main` deploys production directly; staging shows the same commit but nothing
+waits on it.
+
+**The release-branch model is deferred, not rejected.** Under it, `grafomem` and `grafomem-deamon`
+would track a `release` branch and the operator would promote with `git push origin main:release`
+after staging validation — turning staging from a mirror into a gate.
+
+**Revisit trigger, stated so the deferral has an end:** before the **HMAC production run** and
+before **Iccrea contact**, whichever comes first. Both raise the cost of a bad deploy above what
+auto-deploy-on-merge is worth — the first because it migrates credential storage, the second because
+an outage during a bank conversation is not a technical event.
+
+**Cost accepted meanwhile:** every merge to `main` — including docs-only merges, until watch paths
+land — deploys production, on a single replica, behind a healthcheck that does not touch the
+database. The rollback is a Railway redeploy of the previous good commit.
+
 ## Open sub-questions
 
 - **The assignment instrument and its direction** — with counsel. Load-bearing, unresolved.
@@ -161,3 +180,9 @@ To be **corrected visibly here** when the gate moves to `/readyz`.
   (ADR-0002, ADR-0004) that is a live question, not a deployment detail. Options: a Railway EU
   region; an EU deployment offered on Enterprise only; or both, with the default following the
   customer. **Operator decides — not acted on.**
+- **The SIEM exporter has no destination.** `grafomem-deamon` runs `SiemExporter` alongside the
+  erasure sweeper, and `SIEM_WEBHOOK_URL` is **unset** on that service — so audit events are
+  exported nowhere. For a product whose pitch rests on auditability, where those events are meant to
+  land is a commercial and compliance question, not a config default. **Operator decides the
+  destination; no placeholder has been set** — a placeholder would make an unmonitored pipeline look
+  configured, which is the failure mode worth avoiding here.
